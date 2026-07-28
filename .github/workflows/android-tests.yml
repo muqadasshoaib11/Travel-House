@@ -59,7 +59,7 @@ jobs:
     timeout-minutes: 120
     defaults:
       run:
-        shell: pwsh
+        shell: powershell
 
     steps:
       - name: Checkout
