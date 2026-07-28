@@ -1,12 +1,14 @@
 package com.travelhouse.pages;
 
 import com.travelhouse.base.DriverManager;
+import com.travelhouse.utils.GestureUtil;
 import com.travelhouse.utils.UiHelper;
 import io.appium.java_client.AppiumBy;
 import io.appium.java_client.android.AndroidDriver;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.testng.Assert;
 
 import java.util.List;
 
@@ -136,6 +138,98 @@ public class HomePage {
 
     public boolean isHomeDisplayed() {
         return UiHelper.isAnyDisplayed(searchFlight, oneWay, flyingFrom, goingTo);
+    }
+
+    /**
+     * Scrolls Home and verifies search form + key content sections are present and non-empty.
+     */
+    public void verifyHomePageContents() {
+        openHomeTab();
+        Assert.assertTrue(isHomeDisplayed(), "Flight search form should be visible on Home");
+
+        assertVisibleNonEmpty("One Way");
+        assertVisibleNonEmpty("Return");
+        assertVisibleNonEmpty("Flying From");
+        assertVisibleNonEmpty("Going to");
+        assertVisibleNonEmpty("Departure");
+        assertVisibleNonEmpty("Search Flight");
+
+        // Bottom navigation
+        Assert.assertTrue(
+                UiHelper.waitForDescContains("Home", 3)
+                        || !driver.findElements(homeTab).isEmpty(),
+                "Home tab should be visible");
+        Assert.assertTrue(
+                UiHelper.waitForDescContains("Bookings", 3)
+                        || UiHelper.waitForDescContains("Explore", 2)
+                        || UiHelper.waitForDescContains("Profile", 2),
+                "At least one other bottom tab (Bookings/Explore/Profile) should be visible");
+
+        boolean foundDestinations = scrollUntilVisible(
+                "Most travelled",
+                "Most Travelled",
+                "Travelled Flight Destinations",
+                "Flight Destinations",
+                "Popular Destinations",
+                "Destinations");
+        Assert.assertTrue(foundDestinations,
+                "Most travelled Flight Destinations (or equivalent destinations section) should be visible");
+
+        boolean foundUpcoming = scrollUntilVisible(
+                "Your Upcoming Flights",
+                "Upcoming Flights",
+                "Upcoming",
+                "My Flights");
+        Assert.assertTrue(foundUpcoming,
+                "Your Upcoming Flights (or equivalent upcoming section) should be visible");
+
+        // Return to top search form for subsequent search steps
+        for (int i = 0; i < 4; i++) {
+            if (UiHelper.isAnyDisplayed(searchFlight)) {
+                break;
+            }
+            GestureUtil.swipeDown();
+            pause(600);
+        }
+        Assert.assertTrue(isHomeDisplayed(), "Should return to flight search form after Home content check");
+    }
+
+    private boolean scrollUntilVisible(String... labels) {
+        for (int i = 0; i < 8; i++) {
+            for (String label : labels) {
+                if (UiHelper.waitForDescContains(label, 1)
+                        || !driver.findElements(AppiumBy.androidUIAutomator(
+                        "new UiSelector().textContains(\"" + label.replace("\"", "") + "\")")).isEmpty()) {
+                    System.out.println("[Home] Found section: " + label);
+                    return true;
+                }
+            }
+            GestureUtil.swipeUp();
+            pause(700);
+        }
+        return false;
+    }
+
+    private void assertVisibleNonEmpty(String label) {
+        Assert.assertTrue(
+                UiHelper.waitForDescContains(label, 8)
+                        || UiHelper.waitForDesc(label, 2),
+                "Home content missing or empty: " + label);
+        List<WebElement> nodes = driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"" + label.replace("\"", "") + "\")"));
+        if (!nodes.isEmpty()) {
+            String desc = nodes.get(0).getAttribute("contentDescription");
+            Assert.assertTrue(desc != null && !desc.isBlank(),
+                    "Home content description should not be empty for: " + label);
+        }
+    }
+
+    private static void pause(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 
     public void tapOneWay() {

@@ -49,6 +49,13 @@ public class SearchResultsPage {
      * Scrolls results top → bottom and asserts each listing has required fields.
      */
     public void validateAllListingsHaveRequiredFields() {
+        validateAllListingsHaveRequiredFields(null);
+    }
+
+    /**
+     * @param expectedDestination city name used in route checks (e.g. Jeddah, Karachi); optional
+     */
+    public void validateAllListingsHaveRequiredFields(String expectedDestination) {
         waitForResults();
         List<String> seen = new ArrayList<>();
         int stableRounds = 0;
@@ -65,7 +72,7 @@ public class SearchResultsPage {
                     continue;
                 }
                 seen.add(desc);
-                assertListingComplete(desc, seen.size());
+                assertListingComplete(desc, seen.size(), expectedDestination);
             }
 
             String before = seen.isEmpty() ? "" : seen.get(seen.size() - 1);
@@ -84,7 +91,8 @@ public class SearchResultsPage {
         }
 
         Assert.assertFalse(seen.isEmpty(), "Expected at least one validated flight listing");
-        System.out.println("[Results] Validated listings count=" + seen.size());
+        System.out.println("[Results] Validated listings count=" + seen.size()
+                + (expectedDestination == null ? "" : " for destination=" + expectedDestination));
     }
 
     public void selectCheapest() {
@@ -105,24 +113,31 @@ public class SearchResultsPage {
         }
     }
 
-    private void assertListingComplete(String desc, int index) {
+    private void assertListingComplete(String desc, int index, String expectedDestination) {
         String lower = desc.toLowerCase();
         List<String> missing = new ArrayList<>();
-        if (!lower.contains("departure") && !lower.contains("london") && !lower.contains("islamabad")) {
+
+        boolean hasRoute = lower.contains("departure")
+                || lower.contains("london")
+                || lower.contains("islamabad")
+                || lower.contains("jeddah")
+                || lower.contains("karachi")
+                || lower.contains("airport")
+                || (expectedDestination != null && !expectedDestination.isBlank()
+                && lower.contains(expectedDestination.toLowerCase()));
+        if (!hasRoute) {
             missing.add("route/departure info");
         }
         if (!desc.contains("Pay") && !desc.contains("£") && !desc.matches("(?s).*\\d+\\.\\d{2}.*")) {
             missing.add("price (Pay / amount)");
         }
-        // Time-ish tokens
         if (!desc.matches("(?s).*\\d{1,2}:\\d{2}.*") && !lower.contains("am") && !lower.contains("pm")) {
             missing.add("departure/arrival time");
         }
-        if (!lower.contains("h") && !lower.contains("m") && !lower.contains("duration")) {
-            // duration often like 12h 50m
-            if (!desc.matches("(?s).*\\d+h.*")) {
-                missing.add("duration");
-            }
+        if (!desc.matches("(?s).*\\d+h.*")
+                && !lower.contains("duration")
+                && !(lower.contains("h") && lower.contains("m"))) {
+            missing.add("duration");
         }
         Assert.assertTrue(missing.isEmpty(),
                 "Flight listing #" + index + " has empty/missing fields: " + missing
