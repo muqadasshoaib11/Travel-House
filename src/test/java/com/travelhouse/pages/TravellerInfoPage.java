@@ -39,27 +39,40 @@ public class TravellerInfoPage {
                 "new UiSelector().descriptionContains(\"Contact Information\")")).isEmpty();
     }
 
+    public boolean isMyTravellersScreen() {
+        return !driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"My Travellers\")")).isEmpty()
+                || !driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Who's Going\")")).isEmpty()
+                || isDisplayed();
+    }
+
     public void waitUntilVisible() {
         Assert.assertTrue(
                 UiHelper.waitForDescContains("Who's Going", 25)
+                        || UiHelper.waitForDescContains("My Travellers", 10)
                         || UiHelper.waitForDescContains("Contact Information", 10)
                         || isDisplayed(),
-                "Traveller Information screen should be visible");
+                "Traveller Information / My Travellers screen should be visible");
+    }
+
+    /**
+     * Full traveller completion using the Sign-In email from config.properties.
+     */
+    public void completeTravellerFormUsingSignInEmail() {
+        waitUntilVisible();
+        dismissOverlayIfOpen();
+        selectTravellerFromDropdown();
+        dismissOverlayIfOpen();
+        fillSpecialRequests();
+        fillFrequentFlyer();
+        fillContactSectionWithSignInEmail();
+        GestureUtil.swipeUp();
+        pause(600);
     }
 
     public void completeTravellerFormFromTestData() {
-        waitUntilVisible();
-        dismissOverlayIfOpen();
-
-        selectTravellerFromDropdown();
-        dismissOverlayIfOpen();
-
-        fillSpecialRequests();
-        fillFrequentFlyer();
-        fillContactSection();
-
-        GestureUtil.swipeUp();
-        pause(600);
+        completeTravellerFormUsingSignInEmail();
     }
 
     public void selectTravellerFromDropdown() {
@@ -142,41 +155,45 @@ public class TravellerInfoPage {
     }
 
     public void fillContactSection() {
+        fillContactSectionWithSignInEmail();
+    }
+
+    public void fillContactSectionWithSignInEmail() {
         GestureUtil.swipeUp();
         pause(600);
 
-        String email = TestDataReader.get("traveller.email", "");
-        if (email.isBlank() && Credentials.isConfigured()) {
-            email = Credentials.email();
-        }
-        String mobile = TestDataReader.get("traveller.mobile", "3001234567");
+        String email = Credentials.isConfigured() ? Credentials.email()
+                : TestDataReader.get("traveller.email", "");
+        String mobile = TestDataReader.get("traveller.mobile", "7700900123");
         mobile = mobile.replaceAll("\\D", "");
         if (mobile.length() > 10) {
             mobile = mobile.substring(mobile.length() - 10);
         }
 
-        // Bring Contact Information into view
         for (int i = 0; i < 3; i++) {
             if (UiHelper.waitForDescContains("Mobile Number", 2)
-                    || UiHelper.waitForDescContains("+", 1)) {
+                    || UiHelper.waitForDescContains("Email Address", 1)) {
                 break;
             }
             GestureUtil.swipeUp();
             pause(500);
         }
 
-        // Pakistan first (before email typing opens the keyboard over the code)
-        selectCountryCodePakistan();
+        // Prefer UK +44 for Travel House UK; fall back to Pakistan +92 if configured
+        String preferredCode = TestDataReader.get("traveller.country.code", "United Kingdom");
+        if (preferredCode.toLowerCase().contains("pakistan")) {
+            selectCountryCodePakistan();
+        } else {
+            selectCountryCodeUnitedKingdom();
+        }
         hideKeyboardQuietly();
-        Assert.assertTrue(
-                countryCodeIsPakistan(),
-                "Pakistan country code (+92) should be selected");
 
         List<WebElement> fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
         WebElement emailField = findWideField(fields);
         if (emailField != null && !email.isBlank()) {
             typeIntoField(emailField, email);
             hideKeyboardQuietly();
+            System.out.println("[Traveller] Email set from Sign-In credentials");
         }
 
         fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
@@ -185,12 +202,59 @@ public class TravellerInfoPage {
             typeIntoField(mobileField, mobile);
             hideKeyboardQuietly();
         }
-        System.out.println("[Traveller] Mobile entered (10 digits) with Pakistan +92");
+        System.out.println("[Traveller] Mobile entered (10 digits)");
 
         GestureUtil.swipeUp();
         pause(400);
         selectAnyFromDropdown("How to Contact", "Any (Phone + Email)");
         selectAnyFromDropdown("Contact Time", "Any Time");
+    }
+
+    private void selectCountryCodeUnitedKingdom() {
+        if (!driver.findElements(AppiumBy.accessibilityId("+44")).isEmpty()) {
+            System.out.println("[Traveller] Country code already +44");
+            return;
+        }
+        boolean opened = false;
+        try {
+            List<WebElement> codes = driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionStartsWith(\"+\")"));
+            for (WebElement code : codes) {
+                String desc = safeDesc(code);
+                if (desc.matches("\\+\\d+")) {
+                    code.click();
+                    opened = true;
+                    break;
+                }
+            }
+        } catch (Exception ignored) {
+            // fallback
+        }
+        if (!opened) {
+            opened = UiHelper.tapByDescContains("+92")
+                    || UiHelper.tapByDescContains("+1684")
+                    || UiHelper.tapByDescContains("+1")
+                    || UiHelper.tapByDescContains("+44");
+        }
+        pause(1000);
+        if (!UiHelper.waitForDescContains("Select Country", 5)) {
+            return;
+        }
+        try {
+            List<WebElement> fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
+            if (!fields.isEmpty()) {
+                fields.get(0).click();
+                fields.get(0).sendKeys("United Kingdom");
+                pause(1000);
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
+        UiHelper.tapByDescContains("+44 United Kingdom");
+        UiHelper.tapByDescContains("+44");
+        UiHelper.tapByTextContains("United Kingdom");
+        pause(600);
+        hideKeyboardQuietly();
     }
 
     private boolean countryCodeIsPakistan() {

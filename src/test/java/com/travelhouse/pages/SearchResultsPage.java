@@ -95,6 +95,19 @@ public class SearchResultsPage {
                 + (expectedDestination == null ? "" : " for destination=" + expectedDestination));
     }
 
+    /** After validating listings, return toward the top (Cheapest / first cards). */
+    public void scrollResultsToTop() {
+        for (int i = 0; i < 8; i++) {
+            if (UiHelper.waitForDesc("Cheapest", 1) || UiHelper.waitForDescContains("Cheapest", 1)) {
+                GestureUtil.swipeDown();
+                pause(400);
+                return;
+            }
+            GestureUtil.swipeDown();
+            pause(500);
+        }
+    }
+
     public void selectCheapest() {
         tapFilter("Cheapest");
         selectFirstResultCard();

@@ -145,6 +145,7 @@ public class HomePage {
      */
     public void verifyHomePageContents() {
         openHomeTab();
+        scrollToFlightSearchForm();
         Assert.assertTrue(isHomeDisplayed(), "Flight search form should be visible on Home");
 
         assertVisibleNonEmpty("One Way");
@@ -154,7 +155,6 @@ public class HomePage {
         assertVisibleNonEmpty("Departure");
         assertVisibleNonEmpty("Search Flight");
 
-        // Bottom navigation
         Assert.assertTrue(
                 UiHelper.waitForDescContains("Home", 3)
                         || !driver.findElements(homeTab).isEmpty(),
@@ -165,6 +165,7 @@ public class HomePage {
                         || UiHelper.waitForDescContains("Profile", 2),
                 "At least one other bottom tab (Bookings/Explore/Profile) should be visible");
 
+        // Scroll down through Home content
         boolean foundDestinations = scrollUntilVisible(
                 "Most travelled",
                 "Most Travelled",
@@ -173,7 +174,7 @@ public class HomePage {
                 "Popular Destinations",
                 "Destinations");
         Assert.assertTrue(foundDestinations,
-                "Most travelled Flight Destinations (or equivalent destinations section) should be visible");
+                "Most travelled Flight Destinations (or equivalent) should be visible");
 
         boolean foundUpcoming = scrollUntilVisible(
                 "Your Upcoming Flights",
@@ -181,17 +182,34 @@ public class HomePage {
                 "Upcoming",
                 "My Flights");
         Assert.assertTrue(foundUpcoming,
-                "Your Upcoming Flights (or equivalent upcoming section) should be visible");
+                "Your Upcoming Flights (or equivalent) should be visible");
 
-        // Return to top search form for subsequent search steps
-        for (int i = 0; i < 4; i++) {
-            if (UiHelper.isAnyDisplayed(searchFlight)) {
-                break;
+        // Scroll up again and confirm search form still intact
+        for (int i = 0; i < 6; i++) {
+            GestureUtil.swipeDown();
+            pause(400);
+        }
+        scrollToFlightSearchForm();
+        assertVisibleNonEmpty("Search Flight");
+        assertVisibleNonEmpty("One Way");
+        assertVisibleNonEmpty("Return");
+        Assert.assertTrue(isHomeDisplayed(), "Home search form should remain complete after scroll up/down");
+    }
+
+    /** Swipe to the top until One Way / Return / Search Flight are available. */
+    public void scrollToFlightSearchForm() {
+        openHomeTab();
+        for (int i = 0; i < 8; i++) {
+            if (UiHelper.waitForDesc("One Way", 1) && UiHelper.waitForDesc("Return", 1)
+                    && UiHelper.isAnyDisplayed(searchFlight)) {
+                return;
             }
             GestureUtil.swipeDown();
-            pause(600);
+            pause(500);
         }
-        Assert.assertTrue(isHomeDisplayed(), "Should return to flight search form after Home content check");
+        // One more Home tab tap in case we were on another section
+        openHomeTab();
+        pause(800);
     }
 
     private boolean scrollUntilVisible(String... labels) {
@@ -233,8 +251,10 @@ public class HomePage {
     }
 
     public void tapOneWay() {
-        if (!UiHelper.waitForDescContains("One Way", 10)) {
+        scrollToFlightSearchForm();
+        if (!UiHelper.waitForDesc("One Way", 10)) {
             openHomeTab();
+            scrollToFlightSearchForm();
         }
         if (!UiHelper.tapByDesc("One Way")) {
             tapRequired(oneWay, "One Way");
@@ -242,18 +262,36 @@ public class HomePage {
     }
 
     public void tapReturn() {
-        if (!UiHelper.waitForDescContains("Return", 8)) {
+        scrollToFlightSearchForm();
+        if (!UiHelper.waitForDesc("Return", 8)) {
             openHomeTab();
+            scrollToFlightSearchForm();
         }
         // Prefer exact trip-type "Return" over date field "Return\n..."
-        if (!UiHelper.tapByDesc("Return")) {
-            List<WebElement> options = driver.findElements(returnTrip);
-            if (!options.isEmpty()) {
-                options.get(0).click();
-                return;
-            }
-            throw new IllegalStateException("Return trip type control not found");
+        if (UiHelper.tapByDesc("Return")) {
+            return;
         }
+        List<WebElement> options = driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().description(\"Return\")"));
+        if (!options.isEmpty()) {
+            options.get(0).click();
+            return;
+        }
+        // Last resort: description equals Return among clickables near One Way
+        List<WebElement> near = driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().clickable(true).descriptionContains(\"Return\")"));
+        for (WebElement el : near) {
+            try {
+                String desc = el.getAttribute("contentDescription");
+                if (desc != null && desc.trim().equals("Return")) {
+                    el.click();
+                    return;
+                }
+            } catch (Exception ignored) {
+                // next
+            }
+        }
+        throw new IllegalStateException("Return trip type control not found");
     }
 
     public void openFlyingFrom() {
