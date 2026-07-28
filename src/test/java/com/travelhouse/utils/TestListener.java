@@ -9,6 +9,7 @@ public class TestListener implements ITestListener {
     @Override
     public void onStart(ITestContext context) {
         ExtentReportManager.getInstance();
+        HtmlSummaryReport.setSuiteName(context.getSuite().getName() + " / " + context.getName());
         System.out.println("[SUITE] Starting: " + context.getName());
     }
 

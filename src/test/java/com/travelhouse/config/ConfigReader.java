@@ -32,12 +32,33 @@ public final class ConfigReader {
             throw new IllegalStateException("Failed to load config.properties", e);
         }
 
-        // Allow -D overrides: -Dapp.package=..., -Ddevice.udid=...
+        // -Dkey=value overrides for any key already in the file
         for (String key : PROPS.stringPropertyNames()) {
             String sys = System.getProperty(key);
             if (sys != null && !sys.isBlank()) {
                 PROPS.setProperty(key, sys);
             }
+        }
+
+        // CI/CD: always allow these System properties / env vars (even if blank in file)
+        applyOverride("login.email", "LOGIN_EMAIL");
+        applyOverride("login.password", "LOGIN_PASSWORD");
+        applyOverride("device.udid", "DEVICE_UDID");
+        applyOverride("device.name", "DEVICE_NAME");
+        applyOverride("appium.server.url", "APPIUM_SERVER_URL");
+        applyOverride("app.package", "APP_PACKAGE");
+        applyOverride("app.activity", "APP_ACTIVITY");
+    }
+
+    private static void applyOverride(String propertyKey, String envKey) {
+        String sys = System.getProperty(propertyKey);
+        if (sys != null && !sys.isBlank()) {
+            PROPS.setProperty(propertyKey, sys.trim());
+            return;
+        }
+        String env = System.getenv(envKey);
+        if (env != null && !env.isBlank()) {
+            PROPS.setProperty(propertyKey, env.trim());
         }
     }
 

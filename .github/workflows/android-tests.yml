@@ -1,68 +1,151 @@
-# Self-hosted Android device / emulator CI stub for Travel House Appium.
-# Requires: JDK 17, Maven, Appium 2.x, connected device (adb devices), APK under apps/.
+# Travel House Appium — GitHub Actions (self-hosted Windows runner + physical device)
 #
-# Secrets (configure on the runner / repo — do NOT commit):
-#   LOGIN_EMAIL, LOGIN_PASSWORD  — optional overrides for config.properties
-#   Device UDID can be set via DEVICE_UDID env or -Ddevice.udid=
+# Runner prerequisites:
+#   - Windows self-hosted runner labeled / default self-hosted
+#   - JDK 17, Maven, Node.js, Appium 2.x + uiautomator2, Android platform-tools (adb)
+#   - USB device authorized (adb devices shows "device")
+#   - Optional: APK under apps/ (or app already installed on device)
+#
+# Repo secrets (Settings → Secrets and variables → Actions):
+#   LOGIN_EMAIL, LOGIN_PASSWORD  — test account (overrides config.properties)
+#   DEVICE_UDID                  — optional; defaults to config.properties
+#
+# Manual run: Actions → Android Appium CI/CD → Run workflow → pick suite
 
-name: Android Appium Tests
+name: Android Appium CI/CD
 
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: "TestNG suite to run"
+        required: true
+        default: dual-route
+        type: choice
+        options:
+          - dual-route
+          - smoke
+          - regression
+      skip_appium_start:
+        description: "Skip starting Appium (use already-running server)"
+        required: false
+        default: false
+        type: boolean
+
   push:
-    branches: [ main, master ]
+    branches: [main, master, feature/login-flight-search]
     paths:
       - "src/test/**"
       - "pom.xml"
-      - ".github/workflows/android-tests.yml"
+      - "scripts/**"
+      - ".github/workflows/**"
+
+  pull_request:
+    branches: [main, master]
+    paths:
+      - "src/test/**"
+      - "pom.xml"
+      - "scripts/**"
+      - ".github/workflows/**"
+
+concurrency:
+  group: appium-android-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  android-regression:
+  android-appium:
+    name: Appium (${{ github.event.inputs.suite || 'dual-route' }})
     runs-on: self-hosted
-    timeout-minutes: 90
+    timeout-minutes: 120
+    defaults:
+      run:
+        shell: pwsh
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-          cache: maven
-
-      - name: Verify device
+      - name: Resolve suite XML
+        id: suite
         run: |
-          adb devices
-          echo "Ensure Appium is running on the self-hosted runner (default http://127.0.0.1:4723)"
+          $choice = "${{ github.event.inputs.suite }}"
+          if ([string]::IsNullOrWhiteSpace($choice)) {
+            if ("${{ github.ref_name }}" -eq "main" -or "${{ github.ref_name }}" -eq "master") {
+              # main keeps full booking journey when present; dual-route is default otherwise
+              if (Test-Path "src/test/resources/regression.xml") { $choice = "regression" }
+              else { $choice = "dual-route" }
+            } else {
+              $choice = "dual-route"
+            }
+          }
+          $map = @{
+            "dual-route" = "src/test/resources/dual-route-booking.xml"
+            "smoke" = "src/test/resources/smoke.xml"
+            "regression" = "src/test/resources/regression.xml"
+          }
+          $xml = $map[$choice]
+          if (-not $xml) { $xml = "src/test/resources/dual-route-booking.xml" }
+          if (-not (Test-Path $xml)) {
+            Write-Host "Suite file missing: $xml — falling back to dual-route-booking.xml"
+            $xml = "src/test/resources/dual-route-booking.xml"
+          }
+          Write-Host "Selected suite=$choice xml=$xml"
+          "choice=$choice" >> $env:GITHUB_OUTPUT
+          "xml=$xml" >> $env:GITHUB_OUTPUT
 
-      - name: Compile tests
-        run: mvn -q -DskipTests test-compile
-
-      - name: Run smoke suite
-        run: mvn -q test -DsuiteXmlFile=src/test/resources/smoke.xml
-        continue-on-error: true
-
-      - name: Run regression suite
+      - name: Setup check (JDK / Maven / ADB / device)
         run: |
-          EXTRA=""
-          if [ -n "${LOGIN_EMAIL:-}" ]; then EXTRA="$EXTRA -Dlogin.email=$LOGIN_EMAIL"; fi
-          if [ -n "${LOGIN_PASSWORD:-}" ]; then EXTRA="$EXTRA -Dlogin.password=$LOGIN_PASSWORD"; fi
-          if [ -n "${DEVICE_UDID:-}" ]; then EXTRA="$EXTRA -Ddevice.udid=$DEVICE_UDID"; fi
-          mvn -q test -DsuiteXmlFile=src/test/resources/regression.xml $EXTRA
+          java -version
+          mvn -v
+          adb version
+          adb devices -l
+          $devices = @(adb devices | Select-String "`tdevice$")
+          if ($devices.Count -eq 0) { throw "No Android device connected on the self-hosted runner" }
+
+      - name: Run Appium suite via CI script
         env:
           LOGIN_EMAIL: ${{ secrets.LOGIN_EMAIL }}
           LOGIN_PASSWORD: ${{ secrets.LOGIN_PASSWORD }}
           DEVICE_UDID: ${{ secrets.DEVICE_UDID }}
+          APPIUM_SERVER_URL: ${{ secrets.APPIUM_SERVER_URL }}
+        run: |
+          $skip = "${{ github.event.inputs.skip_appium_start }}" -eq "true"
+          $args = @{
+            SuiteXml = "${{ steps.suite.outputs.xml }}"
+          }
+          if ($skip) { $args.SkipAppiumStart = $true }
+          & .\scripts\ci-run.ps1 @args
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload reports and screenshots
+      - name: Upload HTML reports & screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: appium-reports
+          name: travelhouse-appium-reports-${{ github.run_number }}
           path: |
             reports/
             screenshots/
             target/surefire-reports/
           if-no-files-found: warn
+          retention-days: 14
+
+      - name: Job summary
+        if: always()
+        run: |
+          $report = "reports/TravelHouse_AppBehaviour_PassFail_Report.html"
+          if (-not (Test-Path $report)) { $report = "reports/TravelHouse_FlightBooking_Summary.html" }
+          @"
+          ## Travel House Appium CI
+
+          | Item | Value |
+          | --- | --- |
+          | Branch | `${{ github.ref_name }}` |
+          | Suite | `${{ steps.suite.outputs.choice }}` |
+          | XML | `${{ steps.suite.outputs.xml }}` |
+          | Report artifact | `travelhouse-appium-reports-${{ github.run_number }}` |
+
+          Download the artifact for the **App Behaviour Pass/Fail** HTML report.
+          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          if (Test-Path $report) {
+            Write-Host "Primary report present: $report"
+          }

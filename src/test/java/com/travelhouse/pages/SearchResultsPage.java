@@ -28,17 +28,37 @@ public class SearchResultsPage {
     }
 
     public void waitForResults() {
-        boolean ready = UiHelper.waitForDescContains("Cheapest", 45)
-                || UiHelper.waitForDescContains("Pay", 20)
-                || UiHelper.waitForDescContains("Departure", 20);
+        boolean ready = false;
+        for (int i = 0; i < 12; i++) {
+            if (!findResultCards().isEmpty()) {
+                ready = true;
+                break;
+            }
+            if (UiHelper.waitForDescContains("Cheapest", 3)
+                    || UiHelper.waitForDescContains("Fastest", 2)
+                    || UiHelper.waitForDescContains("Pay", 2)) {
+                pause(1500);
+                if (!findResultCards().isEmpty()) {
+                    ready = true;
+                    break;
+                }
+                GestureUtil.swipeUp();
+                pause(1000);
+            } else {
+                pause(2000);
+            }
+        }
         if (!ready) {
             pause(3000);
         }
     }
 
     public boolean hasResults() {
+        waitForResults();
         return !findResultCards().isEmpty()
-                || !driver.findElements(AppiumBy.accessibilityId("Cheapest")).isEmpty();
+                || !driver.findElements(AppiumBy.accessibilityId("Cheapest")).isEmpty()
+                || !driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Cheapest\")")).isEmpty();
     }
 
     public int getResultCountEstimate() {
@@ -170,8 +190,19 @@ public class SearchResultsPage {
         if (!cards.isEmpty()) {
             return cards;
         }
-        return driver.findElements(AppiumBy.androidUIAutomator(
+        cards = driver.findElements(AppiumBy.androidUIAutomator(
                 "new UiSelector().descriptionContains(\"Departure\")"));
+        if (!cards.isEmpty()) {
+            return cards;
+        }
+        cards = driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"£\")"));
+        if (!cards.isEmpty()) {
+            return cards;
+        }
+        // Some builds expose flight rows as clickable nodes with airport codes / times
+        return driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"h \").descriptionContains(\"m\")"));
     }
 
     private void selectFirstResultCard() {

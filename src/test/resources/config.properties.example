@@ -1,0 +1,24 @@
+# Copy to config.properties for local runs, OR set CI secrets / env vars.
+# Never commit real passwords to git.
+
+# Appium
+appium.server.url=http://127.0.0.1:4723
+implicit.wait.seconds=2
+explicit.wait.seconds=25
+
+# App under test
+app.package=com.travelhouse.uk.app
+app.activity=com.example.travel_house.MainActivity
+enforce.app.install=false
+
+# Device (override with DEVICE_UDID secret in CI)
+device.udid=
+device.name=
+
+# Login (override with LOGIN_EMAIL / LOGIN_PASSWORD secrets in CI)
+login.email=
+login.password=
+
+# Reports
+report.dir=reports
+screenshot.dir=screenshots

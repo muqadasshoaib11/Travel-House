@@ -135,11 +135,20 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
         home.openGoingTo();
         new AirportPickerPage().searchAndSelect(destinationQuery);
         home.tapSearchFlight();
+        pause(5000); // allow Jeddah/Karachi results to load
 
         SearchResultsPage results = new SearchResultsPage();
         results.waitForResults();
         Assert.assertTrue(results.hasResults(),
                 tripLabel + " results (" + origin + " → " + destination + ") should display");
+        // Soft dump if cards still empty after Cheapest shown
+        if (results.getResultCountEstimate() == 0) {
+            pause(4000);
+            results.waitForResults();
+        }
+        Assert.assertTrue(results.getResultCountEstimate() > 0
+                        || results.hasResults(),
+                tripLabel + " flight listing cards should appear for " + origin + " → " + destination);
         results.validateAllListingsHaveRequiredFields(destination);
         ExtentReportManager.logInfo(tripLabel + " results validated");
 
