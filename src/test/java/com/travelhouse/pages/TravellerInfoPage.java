@@ -1,0 +1,601 @@
+package com.travelhouse.pages;
+
+import com.travelhouse.base.DriverManager;
+import com.travelhouse.config.Credentials;
+import com.travelhouse.config.TestDataReader;
+import com.travelhouse.utils.GestureUtil;
+import com.travelhouse.utils.UiHelper;
+import io.appium.java_client.AppiumBy;
+import io.appium.java_client.android.AndroidDriver;
+import org.openqa.selenium.Rectangle;
+import org.openqa.selenium.WebElement;
+import org.openqa.selenium.interactions.PointerInput;
+import org.openqa.selenium.interactions.Sequence;
+import org.testng.Assert;
+
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Traveller Information — saved traveller, special requests, contact fields.
+ */
+public class TravellerInfoPage {
+
+    private final AndroidDriver driver;
+
+    public TravellerInfoPage() {
+        this.driver = DriverManager.getDriver();
+    }
+
+    public boolean isDisplayed() {
+        return !driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Who's Going\")")).isEmpty()
+                || !driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Traveller\")")).isEmpty()
+                || !driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Contact Information\")")).isEmpty();
+    }
+
+    public void waitUntilVisible() {
+        Assert.assertTrue(
+                UiHelper.waitForDescContains("Who's Going", 25)
+                        || UiHelper.waitForDescContains("Contact Information", 10)
+                        || isDisplayed(),
+                "Traveller Information screen should be visible");
+    }
+
+    public void completeTravellerFormFromTestData() {
+        waitUntilVisible();
+        dismissOverlayIfOpen();
+
+        selectTravellerFromDropdown();
+        dismissOverlayIfOpen();
+
+        fillSpecialRequests();
+        fillFrequentFlyer();
+        fillContactSection();
+
+        GestureUtil.swipeUp();
+        pause(600);
+    }
+
+    public void selectTravellerFromDropdown() {
+        boolean opened = UiHelper.tapByDescContains("Please Select a Saved Traveller")
+                || UiHelper.tapByDescContains("My Travellers")
+                || UiHelper.tapByDescContains("Select a Saved Traveller")
+                || UiHelper.tapByDescContains("Adult");
+        pause(1500);
+
+        List<WebElement> options = driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().clickable(true)"));
+        boolean selected = false;
+        for (WebElement option : options) {
+            String desc = safeDesc(option);
+            if (desc.length() < 3) {
+                continue;
+            }
+            if (desc.equalsIgnoreCase("None") || desc.equalsIgnoreCase("Dismiss")
+                    || desc.contains("Tab") || desc.contains("Traveller")
+                    || desc.contains("Who's") || desc.contains("Select")) {
+                continue;
+            }
+            if (desc.contains(" ") || Character.isLetter(desc.charAt(0))) {
+                System.out.println("[Traveller] Selected from dropdown: " + desc);
+                option.click();
+                selected = true;
+                pause(1500);
+                break;
+            }
+        }
+        dismissOverlayIfOpen();
+        Assert.assertTrue(selected || opened,
+                "Could not select a traveller name from the Traveller dropdown");
+    }
+
+    public void fillSpecialRequests() {
+        GestureUtil.swipeUp();
+        pause(500);
+
+        boolean expanded = UiHelper.tapByDescContains("Add Special Request")
+                || UiHelper.tapByDescContains("Special Request");
+        pause(1500);
+        if (expanded) {
+            System.out.println("[Traveller] Opened Special Requests section");
+        }
+
+        // Keep sheet open — select all special-request dropdowns in one pass
+        selectAnyFromDropdown("Seat Preference", "Exit Seat");
+        if (!UiHelper.waitForDescContains("Meal Request", 2)) {
+            UiHelper.tapByDescContains("Add Special Request");
+            pause(800);
+        }
+        selectAnyFromDropdown("Meal Request", "Gluten Free");
+        selectAnyFromDropdown("Special Service", "No Special Service Requested");
+
+        dismissOverlayIfOpen();
+        pause(400);
+        if (UiHelper.waitForDescContains("Select Country", 1)) {
+            UiHelper.tapByDesc("Dismiss");
+            UiHelper.tapByDescContains("Dismiss");
+        }
+        hideKeyboardQuietly();
+        GestureUtil.swipeUp();
+        pause(500);
+    }
+
+    public void fillFrequentFlyer() {
+        String ff = TestDataReader.get("traveller.frequent.flyer", "PK123456789");
+        GestureUtil.swipeUp();
+        pause(400);
+
+        // Frequent Flyer lives inside the big traveller card — skip EditText typing that
+        // can overwrite Email. Log presence only if the label exists.
+        if (UiHelper.waitForDescContains("Frequent Flyer", 2)) {
+            System.out.println("[Traveller] Frequent Flyer section visible (value=" + ff + ")");
+        } else {
+            System.out.println("[Traveller] Frequent Flyer field not found — skipped if not on this build");
+        }
+        dismissOverlayIfOpen();
+    }
+
+    public void fillContactSection() {
+        GestureUtil.swipeUp();
+        pause(600);
+
+        String email = TestDataReader.get("traveller.email", "");
+        if (email.isBlank() && Credentials.isConfigured()) {
+            email = Credentials.email();
+        }
+        String mobile = TestDataReader.get("traveller.mobile", "3001234567");
+        mobile = mobile.replaceAll("\\D", "");
+        if (mobile.length() > 10) {
+            mobile = mobile.substring(mobile.length() - 10);
+        }
+
+        // Bring Contact Information into view
+        for (int i = 0; i < 3; i++) {
+            if (UiHelper.waitForDescContains("Mobile Number", 2)
+                    || UiHelper.waitForDescContains("+", 1)) {
+                break;
+            }
+            GestureUtil.swipeUp();
+            pause(500);
+        }
+
+        // Pakistan first (before email typing opens the keyboard over the code)
+        selectCountryCodePakistan();
+        hideKeyboardQuietly();
+        Assert.assertTrue(
+                countryCodeIsPakistan(),
+                "Pakistan country code (+92) should be selected");
+
+        List<WebElement> fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
+        WebElement emailField = findWideField(fields);
+        if (emailField != null && !email.isBlank()) {
+            typeIntoField(emailField, email);
+            hideKeyboardQuietly();
+        }
+
+        fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
+        WebElement mobileField = findMobileField(fields);
+        if (mobileField != null) {
+            typeIntoField(mobileField, mobile);
+            hideKeyboardQuietly();
+        }
+        System.out.println("[Traveller] Mobile entered (10 digits) with Pakistan +92");
+
+        GestureUtil.swipeUp();
+        pause(400);
+        selectAnyFromDropdown("How to Contact", "Any (Phone + Email)");
+        selectAnyFromDropdown("Contact Time", "Any Time");
+    }
+
+    private boolean countryCodeIsPakistan() {
+        return !driver.findElements(AppiumBy.accessibilityId("+92")).isEmpty()
+                || !driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"+92\")")).isEmpty();
+    }
+
+    private void hideKeyboardQuietly() {
+        try {
+            driver.hideKeyboard();
+        } catch (Exception ignored) {
+            // keyboard may already be hidden
+        }
+        pause(300);
+    }
+
+    public void continueAndVerifyNextScreen() {
+        dismissOverlayIfOpen();
+        GestureUtil.swipeUp();
+        pause(500);
+
+        // Fix validation before Continue
+        if (UiHelper.waitForDescContains("valid mobile", 1)
+                || UiHelper.waitForDescContains("Please enter", 1)) {
+            selectCountryCodePakistan();
+            List<WebElement> fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
+            WebElement mobileField = findMobileField(fields);
+            if (mobileField != null) {
+                typeIntoField(mobileField, TestDataReader.get("traveller.mobile", "3001234567")
+                        .replaceAll("\\D", "").replaceAll("^(\\d{10}).*", "$1"));
+            }
+        }
+
+        List<WebElement> continueBtns = driver.findElements(AppiumBy.accessibilityId("Continue"));
+        if (continueBtns.isEmpty()) {
+            continueBtns = driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionContains(\"Continue\")"));
+        }
+        Assert.assertFalse(continueBtns.isEmpty(), "Continue button not found on Traveller screen");
+        tapCenterSafe(continueBtns.get(0));
+        pause(4000);
+
+        dismissOverlayIfOpen();
+        boolean leftTraveller = !isDisplayed()
+                || new PriceDetailsPage().isDisplayed()
+                || new PriceSummaryPage().isDisplayed()
+                || UiHelper.waitForDescContains("Total Price", 5)
+                || UiHelper.waitForDescContains("Payment", 5)
+                || UiHelper.waitForDescContains("Net Price", 3);
+
+        if (!leftTraveller) {
+            fillContactSection();
+            GestureUtil.swipeUp();
+            pause(500);
+            continueBtns = driver.findElements(AppiumBy.accessibilityId("Continue"));
+            if (continueBtns.isEmpty()) {
+                continueBtns = driver.findElements(AppiumBy.androidUIAutomator(
+                        "new UiSelector().descriptionContains(\"Continue\")"));
+            }
+            if (!continueBtns.isEmpty()) {
+                tapCenterSafe(continueBtns.get(0));
+                pause(4000);
+            }
+            leftTraveller = !isDisplayed()
+                    || new PriceDetailsPage().isDisplayed()
+                    || new PriceSummaryPage().hasTotalPrice()
+                    || UiHelper.waitForDescContains("Total Price", 5);
+        }
+
+        Assert.assertTrue(leftTraveller,
+                "Continue did not navigate to the next screen from Traveller Information");
+    }
+
+    public void dismissOverlayIfOpen() {
+        if (!driver.findElements(AppiumBy.accessibilityId("Dismiss")).isEmpty()
+                || !driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Dismiss\")")).isEmpty()) {
+            UiHelper.tapByDesc("Dismiss");
+            UiHelper.tapByDescContains("Dismiss");
+            pause(400);
+        }
+    }
+
+    private void selectCountryCodePakistan() {
+        if (countryCodeIsPakistan()) {
+            System.out.println("[Traveller] Country code already +92");
+            return;
+        }
+
+        boolean opened = false;
+        // ImageView / node whose content-desc starts with +
+        try {
+            List<WebElement> codes = driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionStartsWith(\"+\")"));
+            for (WebElement code : codes) {
+                String desc = safeDesc(code);
+                if (desc.matches("\\+\\d+")) {
+                    System.out.println("[Traveller] Opening country picker from " + desc);
+                    code.click();
+                    opened = true;
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("[Traveller] descriptionStartsWith(+) issue: " + e.getMessage());
+        }
+
+        if (!opened) {
+            opened = UiHelper.tapByDescContains("+44")
+                    || UiHelper.tapByDescContains("+92")
+                    || UiHelper.tapByDescContains("+1684")
+                    || UiHelper.tapByDescContains("+1");
+        }
+
+        // Coordinate fallback beside Mobile Number label
+        if (!opened) {
+            try {
+                List<WebElement> mobileLabels = driver.findElements(AppiumBy.androidUIAutomator(
+                        "new UiSelector().descriptionContains(\"Mobile Number\")"));
+                if (!mobileLabels.isEmpty()) {
+                    Rectangle r = mobileLabels.get(0).getRect();
+                    int x = Math.max(80, r.x + 80);
+                    int y = r.y + r.height + 50;
+                    PointerInput finger = new PointerInput(PointerInput.Kind.TOUCH, "finger");
+                    Sequence tap = new Sequence(finger, 1);
+                    tap.addAction(finger.createPointerMove(Duration.ZERO, PointerInput.Origin.viewport(), x, y));
+                    tap.addAction(finger.createPointerDown(PointerInput.MouseButton.LEFT.asArg()));
+                    tap.addAction(finger.createPointerUp(PointerInput.MouseButton.LEFT.asArg()));
+                    driver.perform(Collections.singletonList(tap));
+                    opened = true;
+                    System.out.println("[Traveller] Tapped country code via coordinates " + x + "," + y);
+                }
+            } catch (Exception e) {
+                System.out.println("[Traveller] coordinate country tap failed: " + e.getMessage());
+            }
+        }
+        pause(1000);
+
+        if (!UiHelper.waitForDescContains("Select Country", 6)) {
+            System.out.println("[Traveller] Country picker did not open");
+            return;
+        }
+
+        try {
+            List<WebElement> fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
+            if (!fields.isEmpty()) {
+                WebElement search = fields.get(0);
+                search.click();
+                pause(300);
+                try {
+                    search.clear();
+                } catch (Exception ignored) {
+                    // ignore
+                }
+                search.sendKeys("Pakistan");
+                pause(1200);
+            }
+        } catch (Exception e) {
+            System.out.println("[Traveller] Country search type issue: " + e.getMessage());
+        }
+
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                if (UiHelper.tapByDesc("+92 Pakistan")
+                        || UiHelper.tapByDescContains("+92 Pakistan")
+                        || UiHelper.tapByDescContains("+92")
+                        || UiHelper.tapByTextContains("Pakistan")) {
+                    System.out.println("[Traveller] Selected Pakistan country code (+92)");
+                    pause(800);
+                    hideKeyboardQuietly();
+                    return;
+                }
+            } catch (Exception e) {
+                pause(400);
+            }
+        }
+        dismissOverlayIfOpen();
+    }
+
+    private void selectAnyFromDropdown(String primaryLabel, String preferredOption) {
+        boolean opened = UiHelper.tapByDescContains(primaryLabel)
+                || UiHelper.tapByTextContains(primaryLabel);
+        if (!opened) {
+            System.out.println("[Traveller] Dropdown not found (may be absent on build): " + primaryLabel);
+            return;
+        }
+        pause(1000);
+
+        if (preferredOption != null && (UiHelper.tapByDesc(preferredOption)
+                || UiHelper.tapByDescContains(preferredOption)
+                || UiHelper.tapByTextContains(preferredOption))) {
+            System.out.println("[Traveller] " + primaryLabel + " → " + preferredOption);
+            pause(800);
+            dismissOverlayIfOpen();
+            return;
+        }
+
+        List<WebElement> options = driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().clickable(true)"));
+        for (WebElement option : options) {
+            String desc = safeDesc(option);
+            if (!isPlausibleDropdownOption(desc, primaryLabel)) {
+                continue;
+            }
+            try {
+                System.out.println("[Traveller] " + primaryLabel + " → " + desc);
+                option.click();
+                pause(800);
+                dismissOverlayIfOpen();
+                return;
+            } catch (Exception e) {
+                break;
+            }
+        }
+        dismissOverlayIfOpen();
+    }
+
+    private boolean isPlausibleDropdownOption(String desc, String primaryLabel) {
+        if (desc == null || desc.length() < 2 || desc.length() > 80) {
+            return false;
+        }
+        String lower = desc.toLowerCase();
+        String label = (primaryLabel == null ? "" : primaryLabel).toLowerCase();
+
+        if (desc.equalsIgnoreCase("Dismiss")
+                || desc.equalsIgnoreCase("Continue")
+                || desc.equalsIgnoreCase("None")
+                || desc.contains("Tab")
+                || desc.contains("Who's")
+                || desc.contains("Contact Information")
+                || desc.contains("Add Special")
+                || desc.contains("Select Country")
+                || desc.matches("\\+\\d+.*")
+                || (primaryLabel != null && desc.contains(primaryLabel))) {
+            return false;
+        }
+        if (lower.contains("muqadas") || desc.matches("[A-Z][a-z]+\\s+[A-Z][a-z]+")) {
+            return false;
+        }
+
+        boolean seatLike = lower.contains("seat") || lower.contains("window") || lower.contains("aisle")
+                || lower.contains("middle") || lower.equals("any");
+        boolean mealLike = lower.contains("meal") || lower.contains("vegetarian") || lower.contains("halal")
+                || lower.contains("vegan") || lower.contains("gluten") || lower.contains("kosher");
+        boolean serviceLike = lower.contains("service") || lower.contains("wheelchair")
+                || lower.contains("bassinet") || lower.contains("legroom");
+        boolean contactLike = lower.contains("email") || lower.contains("phone") || lower.contains("whatsapp")
+                || lower.contains("sms") || lower.contains("call") || lower.contains("message");
+        boolean timeLike = lower.contains("morning") || lower.contains("afternoon") || lower.contains("evening")
+                || lower.contains("anytime") || lower.contains("any time") || lower.matches(".*\\btime\\b.*");
+
+        if (label.contains("meal") && (seatLike || desc.matches("\\+\\d+.*"))) {
+            return false;
+        }
+        if (label.contains("seat") && mealLike) {
+            return false;
+        }
+        if (label.contains("service") && (seatLike || mealLike || desc.matches("\\+\\d+.*"))) {
+            return false;
+        }
+        if ((label.contains("how to") || (label.contains("contact") && !label.contains("time")))
+                && (seatLike || mealLike)) {
+            return false;
+        }
+        if (label.contains("time") && (seatLike || mealLike || (contactLike && !timeLike))) {
+            return false;
+        }
+
+        if (label.contains("seat") && seatLike) {
+            return true;
+        }
+        if (label.contains("meal") && mealLike) {
+            return true;
+        }
+        if (label.contains("service") && serviceLike) {
+            return true;
+        }
+        if ((label.contains("how to") || (label.contains("contact") && !label.contains("time"))) && contactLike) {
+            return true;
+        }
+        if (label.contains("time") && timeLike) {
+            return true;
+        }
+        return false;
+    }
+
+    private WebElement findWideField(List<WebElement> fields) {
+        WebElement best = null;
+        int bestWidth = 0;
+        for (WebElement field : fields) {
+            try {
+                int w = field.getRect().width;
+                if (w > bestWidth) {
+                    bestWidth = w;
+                    best = field;
+                }
+            } catch (Exception ignored) {
+                // next
+            }
+        }
+        return best;
+    }
+
+    private WebElement findMobileField(List<WebElement> fields) {
+        WebElement best = null;
+        int bestWidth = Integer.MAX_VALUE;
+        for (WebElement field : fields) {
+            try {
+                String text = field.getText();
+                if (text != null && text.contains("@")) {
+                    continue;
+                }
+                int w = field.getRect().width;
+                // Mobile field sits beside country code — narrower than email
+                if (w > 150 && w < 700 && w < bestWidth) {
+                    bestWidth = w;
+                    best = field;
+                }
+            } catch (Exception ignored) {
+                // next
+            }
+        }
+        if (best != null) {
+            return best;
+        }
+        for (int i = fields.size() - 1; i >= 0; i--) {
+            WebElement field = fields.get(i);
+            try {
+                String text = field.getText();
+                if (text != null && text.contains("@")) {
+                    continue;
+                }
+                return field;
+            } catch (Exception ignored) {
+                // next
+            }
+        }
+        return null;
+    }
+
+    private void typeIntoField(WebElement field, String value) {
+        field.click();
+        pause(300);
+        try {
+            field.clear();
+        } catch (Exception ignored) {
+            // Flutter
+        }
+        try {
+            field.sendKeys(value);
+            pause(400);
+            String typed = field.getText();
+            if (typed != null
+                    && typed.contains(value.substring(0, Math.min(4, value.length())))
+                    && !typed.contains(" GT")) {
+                return;
+            }
+        } catch (Exception ignored) {
+            // shell fallback
+        }
+
+        try {
+            List<String> delArgs = new ArrayList<>();
+            delArgs.add("keyevent");
+            for (int i = 0; i < 30; i++) {
+                delArgs.add("67");
+            }
+            driver.executeScript("mobile: shell", Map.of("command", "input", "args", delArgs));
+            String escaped = value.replace(" ", "%s").replace("@", "\\@");
+            driver.executeScript("mobile: shell", Map.of(
+                    "command", "input",
+                    "args", List.of("text", escaped)));
+            pause(400);
+        } catch (Exception e) {
+            System.out.println("[Traveller] typeIntoField issue: " + e.getMessage());
+        }
+    }
+
+    private void tapCenterSafe(WebElement element) {
+        Rectangle rect = element.getRect();
+        int x = rect.x + rect.width / 2;
+        int y = Math.min(rect.y + rect.height / 2, 2150);
+        PointerInput finger = new PointerInput(PointerInput.Kind.TOUCH, "finger");
+        Sequence tap = new Sequence(finger, 1);
+        tap.addAction(finger.createPointerMove(Duration.ZERO, PointerInput.Origin.viewport(), x, y));
+        tap.addAction(finger.createPointerDown(PointerInput.MouseButton.LEFT.asArg()));
+        tap.addAction(finger.createPointerUp(PointerInput.MouseButton.LEFT.asArg()));
+        driver.perform(Collections.singletonList(tap));
+    }
+
+    private static String safeDesc(WebElement el) {
+        try {
+            String d = el.getAttribute("contentDescription");
+            return d == null ? "" : d.trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static void pause(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}

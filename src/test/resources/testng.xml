@@ -1,0 +1,19 @@
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="Travel House Android Suite" verbose="1" parallel="false">
+    <listeners>
+        <listener class-name="com.travelhouse.utils.TestListener"/>
+    </listeners>
+
+    <test name="Smoke">
+        <classes>
+            <class name="com.travelhouse.tests.AppLaunchTest"/>
+            <class name="com.travelhouse.tests.LoginTest"/>
+        </classes>
+    </test>
+
+    <test name="Regression — Flight Booking Journey">
+        <classes>
+            <class name="com.travelhouse.tests.FlightBookingJourneyTest"/>
+        </classes>
+    </test>
+</suite>

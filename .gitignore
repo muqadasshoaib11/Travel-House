@@ -1,0 +1,15 @@
+target/
+reports/
+screenshots/
+*.log
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+apps/*.apk
+apps/*.aab
+!apps/.gitkeep
+!reports/.gitkeep
+!screenshots/.gitkeep

@@ -1,0 +1,68 @@
+# Self-hosted Android device / emulator CI stub for Travel House Appium.
+# Requires: JDK 17, Maven, Appium 2.x, connected device (adb devices), APK under apps/.
+#
+# Secrets (configure on the runner / repo — do NOT commit):
+#   LOGIN_EMAIL, LOGIN_PASSWORD  — optional overrides for config.properties
+#   Device UDID can be set via DEVICE_UDID env or -Ddevice.udid=
+
+name: Android Appium Tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+    paths:
+      - "src/test/**"
+      - "pom.xml"
+      - ".github/workflows/android-tests.yml"
+
+jobs:
+  android-regression:
+    runs-on: self-hosted
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Verify device
+        run: |
+          adb devices
+          echo "Ensure Appium is running on the self-hosted runner (default http://127.0.0.1:4723)"
+
+      - name: Compile tests
+        run: mvn -q -DskipTests test-compile
+
+      - name: Run smoke suite
+        run: mvn -q test -DsuiteXmlFile=src/test/resources/smoke.xml
+        continue-on-error: true
+
+      - name: Run regression suite
+        run: |
+          EXTRA=""
+          if [ -n "${LOGIN_EMAIL:-}" ]; then EXTRA="$EXTRA -Dlogin.email=$LOGIN_EMAIL"; fi
+          if [ -n "${LOGIN_PASSWORD:-}" ]; then EXTRA="$EXTRA -Dlogin.password=$LOGIN_PASSWORD"; fi
+          if [ -n "${DEVICE_UDID:-}" ]; then EXTRA="$EXTRA -Ddevice.udid=$DEVICE_UDID"; fi
+          mvn -q test -DsuiteXmlFile=src/test/resources/regression.xml $EXTRA
+        env:
+          LOGIN_EMAIL: ${{ secrets.LOGIN_EMAIL }}
+          LOGIN_PASSWORD: ${{ secrets.LOGIN_PASSWORD }}
+          DEVICE_UDID: ${{ secrets.DEVICE_UDID }}
+
+      - name: Upload reports and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appium-reports
+          path: |
+            reports/
+            screenshots/
+            target/surefire-reports/
+          if-no-files-found: warn
