@@ -68,14 +68,17 @@ jobs:
       - name: Wait for Android device
         shell: powershell
         run: |
-          adb kill-server
+          # GHA sets ErrorActionPreference=Stop; adb writes status to stderr and would abort.
+          $ErrorActionPreference = "Continue"
+          cmd /c "adb kill-server"
           Start-Sleep -Seconds 2
-          adb start-server
-          Start-Sleep -Seconds 2
-          adb devices -l
+          cmd /c "adb start-server"
+          Start-Sleep -Seconds 3
+          cmd /c "adb devices -l"
           $ready = $false
           for ($i = 1; $i -le 10; $i++) {
-            $devices = @(adb devices | Where-Object { $_ -match "\tdevice$" })
+            $raw = cmd /c "adb devices"
+            $devices = @($raw -split "`r?`n" | Where-Object { $_ -match "\tdevice$" })
             if ($devices.Count -gt 0) {
               Write-Host "Device ready: $($devices[0])"
               $ready = $true
@@ -83,10 +86,10 @@ jobs:
             }
             Write-Host "Waiting for device attempt $i/10 - plug in phone and authorize USB debugging"
             Start-Sleep -Seconds 6
-            adb devices -l
+            cmd /c "adb devices -l"
           }
           if (-not $ready) {
-            Write-Error "No Android device connected"
+            Write-Host "No Android device connected"
             exit 1
           }
 

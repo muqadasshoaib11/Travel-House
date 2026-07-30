@@ -14,7 +14,8 @@ param(
     [switch]$SkipDeviceCheck
 )
 
-$ErrorActionPreference = "Stop"
+# Continue: native tools (adb/appium) write informational lines to stderr; Stop would abort CI.
+$ErrorActionPreference = "Continue"
 $root = Split-Path -Parent $PSScriptRoot
 Set-Location $root
 
@@ -32,10 +33,11 @@ function Test-AppiumUp {
 }
 
 if (-not $SkipDeviceCheck) {
-    $devices = @(adb devices 2>$null | Where-Object { $_ -match "\tdevice$" })
+    $raw = cmd /c "adb devices"
+    $devices = @($raw -split "`r?`n" | Where-Object { $_ -match "\tdevice$" })
     if ($devices.Count -eq 0) {
         Write-Host "[CI] FAIL: No Android device in 'device' state (adb devices)" -ForegroundColor Red
-        adb devices -l
+        cmd /c "adb devices -l"
         exit 1
     }
     Write-Host "[CI] Device OK: $($devices[0].ToString().Trim())" -ForegroundColor Green
