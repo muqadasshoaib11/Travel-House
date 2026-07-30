@@ -252,20 +252,28 @@ public class SearchResultsPage {
         }
         Assert.assertFalse(cards.isEmpty(), "Could not find a flight result card to select");
 
-        WebElement card = cards.get(0);
+        // Prefer an explicit Pay button tap (Flutter) before coordinate fallbacks
+        if (UiHelper.tapByDescContains("Pay £") || UiHelper.tapByDescContains("Pay")) {
+            pause(4000);
+            if (reachedDetails()) {
+                return;
+            }
+        }
+
+        WebElement card = findResultCards().isEmpty() ? cards.get(0) : findResultCards().get(0);
         Rectangle rect = card.getRect();
         try {
             card.click();
-            pause(2500);
+            pause(4000);
             if (reachedDetails()) {
                 return;
             }
         } catch (Exception ignored) {
             // coordinate tap
         }
-        for (double ratio : new double[]{0.90, 0.80, 0.70}) {
+        for (double ratio : new double[]{0.92, 0.85, 0.75, 0.50}) {
             tapAt(rect, ratio);
-            pause(2500);
+            pause(3500);
             if (reachedDetails()) {
                 return;
             }
@@ -278,17 +286,36 @@ public class SearchResultsPage {
     }
 
     private boolean reachedDetails() {
-        return !driver.findElements(AppiumBy.accessibilityId("Proceed with payment")).isEmpty()
-                || !driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Proceed with payment\")")).isEmpty()
-                || !driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Price Summary\")")).isEmpty()
-                || !driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Outbound\")")).isEmpty()
-                || !driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Full Payment\")")).isEmpty()
-                || !driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Installment\")")).isEmpty();
+        String[] markers = {
+                "Proceed with payment",
+                "Price Summary",
+                "Outbound",
+                "Full Payment",
+                "Installment",
+                "Select Fare",
+                "Total Price",
+                "Terms and Conditions",
+                "My Travellers",
+                "Traveller Information",
+                "Payment method"
+        };
+        var previous = driver.manage().timeouts().getImplicitWaitTimeout();
+        try {
+            driver.manage().timeouts().implicitlyWait(Duration.ZERO);
+            for (String marker : markers) {
+                if (!driver.findElements(AppiumBy.androidUIAutomator(
+                        "new UiSelector().descriptionContains(\"" + marker + "\")")).isEmpty()) {
+                    return true;
+                }
+            }
+            return !driver.findElements(AppiumBy.accessibilityId("Proceed with payment")).isEmpty();
+        } finally {
+            try {
+                driver.manage().timeouts().implicitlyWait(previous);
+            } catch (Exception ignored) {
+                // session may have moved on
+            }
+        }
     }
 
     private void tapAt(Rectangle rect, double yRatio) {
