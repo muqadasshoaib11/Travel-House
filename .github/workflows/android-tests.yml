@@ -66,28 +66,29 @@ jobs:
           echo COMPILE_OK
 
       - name: Wait for Android device
-        shell: cmd
+        shell: powershell
         run: |
           adb kill-server
+          Start-Sleep -Seconds 2
           adb start-server
+          Start-Sleep -Seconds 2
           adb devices -l
-          set READY=0
-          for /L %%i in (1,1,10) do (
-            adb devices | findstr /R /C:"device$" >nul
-            if not errorlevel 1 (
-              echo Device ready
-              set READY=1
-              goto :done
-            )
-            echo Waiting for device attempt %%i/10 - plug in phone and authorize USB debugging
-            timeout /t 6 /nobreak >nul
+          $ready = $false
+          for ($i = 1; $i -le 10; $i++) {
+            $devices = @(adb devices | Where-Object { $_ -match "\tdevice$" })
+            if ($devices.Count -gt 0) {
+              Write-Host "Device ready: $($devices[0])"
+              $ready = $true
+              break
+            }
+            Write-Host "Waiting for device attempt $i/10 - plug in phone and authorize USB debugging"
+            Start-Sleep -Seconds 6
             adb devices -l
-          )
-          :done
-          if "%READY%"=="0" (
-            echo No Android device connected
-            exit /b 1
-          )
+          }
+          if (-not $ready) {
+            Write-Error "No Android device connected"
+            exit 1
+          }
 
       - name: Run Appium suite
         shell: powershell
