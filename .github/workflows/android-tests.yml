@@ -1,8 +1,4 @@
-# Travel House Appium — GitHub Actions (self-hosted Windows + physical device)
-#
-# Job 1 (build): always runs — proves CI is healthy (compile)
-# Job 2 (appium): needs phone connected via USB with debugging authorized
-#
+# Travel House Appium CI/CD — self-hosted Windows runner + USB phone
 # Secrets: LOGIN_EMAIL, LOGIN_PASSWORD, DEVICE_UDID (optional)
 
 name: Android Appium CI/CD
@@ -46,64 +42,52 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Build (compile tests)
-    runs-on: self-hosted
-    timeout-minutes: 20
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Compile test sources
-        shell: powershell
-        run: |
-          $ErrorActionPreference = "Stop"
-          java -version
-          mvn -v
-          mvn -q -DskipTests test-compile
-          Write-Host "COMPILE_OK"
-          if (-not (Test-Path "src/test/resources/dual-route-booking.xml")) {
-            throw "Missing dual-route-booking.xml"
-          }
-          Write-Host "SUITE_FILES_OK"
-
   appium:
     name: Appium (${{ github.event.inputs.suite || 'dual-route' }})
-    needs: build
     runs-on: self-hosted
     timeout-minutes: 120
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup check (device required)
-        shell: powershell
+      - name: Verify tools
+        shell: cmd
         run: |
-          $ErrorActionPreference = "Stop"
-          Write-Host "Java:"; java -version
-          Write-Host "Maven:"; mvn -v
-          Write-Host "ADB:"; adb version
+          java -version
+          mvn -v
+          adb version
+
+      - name: Compile tests
+        shell: cmd
+        run: |
+          mvn -B -DskipTests test-compile
+          if errorlevel 1 exit /b 1
+          echo COMPILE_OK
+
+      - name: Wait for Android device
+        shell: cmd
+        run: |
           adb kill-server
-          Start-Sleep -Seconds 2
           adb start-server
-          Start-Sleep -Seconds 2
           adb devices -l
-          $ready = $false
-          for ($i = 1; $i -le 8; $i++) {
-            $devices = @(adb devices | Where-Object { $_ -match "\tdevice$" })
-            if ($devices.Count -gt 0) {
-              Write-Host "Device ready: $($devices[0])"
-              $ready = $true
-              break
-            }
-            Write-Host "Waiting for Android device attempt $i/8 ..."
-            Write-Host "ACTION NEEDED: Plug in phone, enable USB debugging, set USB to File Transfer, tap Allow."
-            Start-Sleep -Seconds 8
+          set READY=0
+          for /L %%i in (1,1,10) do (
+            adb devices | findstr /R /C:"device$" >nul
+            if not errorlevel 1 (
+              echo Device ready
+              set READY=1
+              goto :done
+            )
+            echo Waiting for device attempt %%i/10 - plug in phone and authorize USB debugging
+            timeout /t 6 /nobreak >nul
             adb devices -l
-          }
-          if (-not $ready) {
-            throw "No Android device connected on the self-hosted runner. Connect the phone and re-run the workflow."
-          }
+          )
+          :done
+          if "%READY%"=="0" (
+            echo No Android device connected
+            exit /b 1
+          )
 
       - name: Run Appium suite
         shell: powershell
@@ -115,25 +99,21 @@ jobs:
           SUITE_INPUT: ${{ github.event.inputs.suite }}
           SKIP_APPIUM: ${{ github.event.inputs.skip_appium_start }}
         run: |
-          $ErrorActionPreference = "Stop"
           $choice = $env:SUITE_INPUT
           if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "dual-route" }
           switch ($choice) {
-            "smoke"       { $xml = "src/test/resources/smoke.xml" }
-            "regression"  { $xml = "src/test/resources/regression.xml" }
-            default       { $xml = "src/test/resources/dual-route-booking.xml"; $choice = "dual-route" }
+            "smoke"      { $xml = "src\test\resources\smoke.xml" }
+            "regression" { $xml = "src\test\resources\regression.xml" }
+            default      { $xml = "src\test\resources\dual-route-booking.xml"; $choice = "dual-route" }
           }
           Write-Host "Running suite=$choice xml=$xml"
           if (-not (Test-Path $xml)) { throw "Suite XML not found: $xml" }
-          $skip = ($env:SKIP_APPIUM -eq "true")
-          if ($skip) {
-            & .\scripts\ci-run.ps1 -SuiteXml $xml -SkipAppiumStart
-          } else {
-            & .\scripts\ci-run.ps1 -SuiteXml $xml
-          }
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $args = @{ SuiteXml = $xml }
+          if ($env:SKIP_APPIUM -eq "true") { $args.SkipAppiumStart = $true }
+          & .\scripts\ci-run.ps1 @args
+          exit $LASTEXITCODE
 
-      - name: Upload HTML reports and screenshots
+      - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -144,22 +124,3 @@ jobs:
             target/surefire-reports/
           if-no-files-found: warn
           retention-days: 14
-
-      - name: Job summary
-        if: always()
-        shell: powershell
-        run: |
-          $suite = $env:SUITE_INPUT
-          if ([string]::IsNullOrWhiteSpace($suite)) { $suite = "dual-route" }
-          $lines = @(
-            "## Travel House Appium CI",
-            "",
-            "| Item | Value |",
-            "| --- | --- |",
-            "| Branch | ${{ github.ref_name }} |",
-            "| Suite | $suite |",
-            "| Report artifact | travelhouse-appium-reports-${{ github.run_number }} |",
-            "",
-            "Download the artifact for the App Behaviour Pass/Fail HTML report."
-          )
-          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ($lines -join "`n") -Encoding utf8
