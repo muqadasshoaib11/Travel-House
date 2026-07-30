@@ -5,9 +5,9 @@ import com.travelhouse.config.ConfigReader;
 import com.travelhouse.utils.DevicePrep;
 import io.appium.java_client.android.AndroidDriver;
 import io.appium.java_client.android.options.UiAutomator2Options;
+import org.openqa.selenium.remote.http.ClientConfig;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
-import java.net.MalformedURLException;
 import java.net.URI;
 import java.time.Duration;
 
@@ -26,17 +26,18 @@ public final class DriverManager {
         DevicePrep.prepareForSession();
         UiAutomator2Options options = CapabilityFactory.createAndroidOptions();
         String serverUrl = ConfigReader.get("appium.server.url", "http://127.0.0.1:4723");
-        try {
-            AndroidDriver driver = new AndroidDriver(URI.create(serverUrl).toURL(), options);
-            // Keep implicit wait low — Flutter trees + many findElements otherwise stall for minutes
-            driver.manage().timeouts().implicitlyWait(
-                    Duration.ofSeconds(ConfigReader.getInt("implicit.wait.seconds", 2)));
-            DRIVER.set(driver);
-            WAIT.set(new WebDriverWait(driver,
-                    Duration.ofSeconds(ConfigReader.getInt("explicit.wait.seconds", 20))));
-        } catch (MalformedURLException e) {
-            throw new IllegalStateException("Invalid Appium server URL: " + serverUrl, e);
-        }
+        // Bound HTTP waits so a stuck UiAutomator findElements cannot hang CI for hours
+        int readTimeoutSec = ConfigReader.getInt("appium.read.timeout.seconds", 90);
+        ClientConfig clientConfig = ClientConfig.defaultConfig()
+                .baseUri(URI.create(serverUrl))
+                .readTimeout(Duration.ofSeconds(readTimeoutSec));
+        AndroidDriver driver = new AndroidDriver(clientConfig, options);
+        // Keep implicit wait low — Flutter trees + many findElements otherwise stall for minutes
+        driver.manage().timeouts().implicitlyWait(
+                Duration.ofSeconds(ConfigReader.getInt("implicit.wait.seconds", 2)));
+        DRIVER.set(driver);
+        WAIT.set(new WebDriverWait(driver,
+                Duration.ofSeconds(ConfigReader.getInt("explicit.wait.seconds", 20))));
     }
 
     public static AndroidDriver getDriver() {

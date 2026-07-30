@@ -236,24 +236,32 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
     }
 
     private void navigateBackToHome() {
-        for (int i = 0; i < 10; i++) {
+        for (int i = 0; i < 8; i++) {
             HomePage home = new HomePage();
-            if (home.isHomeDisplayed()) {
-                home.scrollToFlightSearchForm();
-                return;
+            try {
+                if (home.isHomeDisplayed()) {
+                    home.scrollToFlightSearchForm();
+                    return;
+                }
+            } catch (Exception ignored) {
+                // driver/uiautomator may be recovering
             }
             try {
                 DriverManager.getDriver().navigate().back();
             } catch (Exception ignored) {
                 // continue
             }
-            pause(1000);
-            home.bringAppToForeground();
-            home.openHomeTab();
-            PermissionDialog.dismissAll(2);
-            if (home.isHomeDisplayed()) {
-                home.scrollToFlightSearchForm();
-                return;
+            pause(800);
+            try {
+                home.bringAppToForeground();
+                home.openHomeTab();
+                PermissionDialog.dismissAll(2);
+                if (home.isHomeDisplayed()) {
+                    home.scrollToFlightSearchForm();
+                    return;
+                }
+            } catch (Exception e) {
+                ExtentReportManager.logInfo("navigateBackToHome retry " + (i + 1) + ": " + e.getMessage());
             }
         }
         Assert.fail("Could not navigate back to Home");

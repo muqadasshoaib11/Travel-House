@@ -21,7 +21,7 @@ public final class CapabilityFactory {
         options.setPlatformName(ConfigReader.get("platform.name", "Android"));
         options.setAutomationName(ConfigReader.get("automation.name", "UiAutomator2"));
         options.setDeviceName(ConfigReader.get("device.name", "Android Device"));
-        options.setNewCommandTimeout(Duration.ofSeconds(ConfigReader.getInt("new.command.timeout", 300)));
+        options.setNewCommandTimeout(Duration.ofSeconds(ConfigReader.getInt("new.command.timeout", 120)));
         options.setNoReset(ConfigReader.getBoolean("no.reset", true));
         options.setFullReset(ConfigReader.getBoolean("full.reset", false));
         options.setAutoGrantPermissions(ConfigReader.getBoolean("auto.grant.permissions", true));

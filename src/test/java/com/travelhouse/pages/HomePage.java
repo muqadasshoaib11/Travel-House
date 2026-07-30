@@ -109,25 +109,23 @@ public class HomePage {
 
     public void openHomeTab() {
         bringAppToForeground();
-        // Leave overlay screens (e.g. Recent Searches) if present
-        if (!DriverManager.getDriver().findElements(
-                AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Recent Searches\")")).isEmpty()
-                && DriverManager.getDriver().findElements(searchFlight).isEmpty()) {
-            DriverManager.getDriver().navigate().back();
-            try {
-                Thread.sleep(1000);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+        // Leave overlay screens (e.g. Recent Searches) if present — never let findElements hang forever
+        try {
+            if (UiHelper.waitForDescContains("Recent Searches", 2)
+                    && !UiHelper.waitForDescContains("Search Flight", 1)) {
+                DriverManager.getDriver().navigate().back();
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
             }
+        } catch (Exception ignored) {
+            // continue — try tapping Home tab anyway
         }
 
         if (!UiHelper.tapByDesc("Home\nTab 1 of 4")) {
-            // Prefer bottom tab — avoid matching unrelated "Home" labels
-            List<WebElement> tabs = driver.findElements(
-                    AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Tab 1 of 4\")"));
-            if (!tabs.isEmpty()) {
-                tabs.get(0).click();
-            } else {
+            if (!UiHelper.tapByDescContains("Tab 1 of 4")) {
                 UiHelper.tapByDescContains("Home");
             }
         }
