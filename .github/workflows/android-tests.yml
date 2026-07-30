@@ -1,7 +1,7 @@
 # Travel House Appium — GitHub Actions (self-hosted Windows + physical device)
 #
-# Prerequisites on the runner PC:
-#   JDK 17, Maven, Appium + uiautomator2, adb, phone connected & authorized
+# Job 1 (build): always runs — proves CI is healthy (compile)
+# Job 2 (appium): needs phone connected via USB with debugging authorized
 #
 # Secrets: LOGIN_EMAIL, LOGIN_PASSWORD, DEVICE_UDID (optional)
 
@@ -46,44 +46,63 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  android-appium:
-    name: Appium (${{ github.event.inputs.suite || 'dual-route' }})
+  build:
+    name: Build (compile tests)
     runs-on: self-hosted
-    timeout-minutes: 120
-
+    timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup check
+      - name: Compile test sources
         shell: powershell
         run: |
           $ErrorActionPreference = "Stop"
-          Write-Host "Java:"
           java -version
-          Write-Host "Maven:"
           mvn -v
-          Write-Host "ADB:"
-          adb version
+          mvn -q -DskipTests test-compile
+          Write-Host "COMPILE_OK"
+          if (-not (Test-Path "src/test/resources/dual-route-booking.xml")) {
+            throw "Missing dual-route-booking.xml"
+          }
+          Write-Host "SUITE_FILES_OK"
+
+  appium:
+    name: Appium (${{ github.event.inputs.suite || 'dual-route' }})
+    needs: build
+    runs-on: self-hosted
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup check (device required)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "Java:"; java -version
+          Write-Host "Maven:"; mvn -v
+          Write-Host "ADB:"; adb version
           adb kill-server
           Start-Sleep -Seconds 2
           adb start-server
           Start-Sleep -Seconds 2
           adb devices -l
           $ready = $false
-          for ($i = 1; $i -le 6; $i++) {
+          for ($i = 1; $i -le 8; $i++) {
             $devices = @(adb devices | Where-Object { $_ -match "\tdevice$" })
             if ($devices.Count -gt 0) {
               Write-Host "Device ready: $($devices[0])"
               $ready = $true
               break
             }
-            Write-Host "Waiting for device attempt $i/6 ..."
-            Start-Sleep -Seconds 5
+            Write-Host "Waiting for Android device attempt $i/8 ..."
+            Write-Host "ACTION NEEDED: Plug in phone, enable USB debugging, set USB to File Transfer, tap Allow."
+            Start-Sleep -Seconds 8
             adb devices -l
           }
           if (-not $ready) {
-            throw "No Android device connected. Plug in the phone, enable USB debugging, tap Allow, then re-run."
+            throw "No Android device connected on the self-hosted runner. Connect the phone and re-run the workflow."
           }
 
       - name: Run Appium suite
@@ -105,6 +124,7 @@ jobs:
             default       { $xml = "src/test/resources/dual-route-booking.xml"; $choice = "dual-route" }
           }
           Write-Host "Running suite=$choice xml=$xml"
+          if (-not (Test-Path $xml)) { throw "Suite XML not found: $xml" }
           $skip = ($env:SKIP_APPIUM -eq "true")
           if ($skip) {
             & .\scripts\ci-run.ps1 -SuiteXml $xml -SkipAppiumStart
