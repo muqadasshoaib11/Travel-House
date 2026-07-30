@@ -244,6 +244,13 @@ public class SearchResultsPage {
     }
 
     private void selectFirstResultCard() {
+        scrollResultsToTop();
+        pause(1000);
+
+        if (tapPayButtonAndWait()) {
+            return;
+        }
+
         List<WebElement> cards = findResultCards();
         if (cards.isEmpty()) {
             GestureUtil.swipeUp();
@@ -252,37 +259,107 @@ public class SearchResultsPage {
         }
         Assert.assertFalse(cards.isEmpty(), "Could not find a flight result card to select");
 
-        // Prefer an explicit Pay button tap (Flutter) before coordinate fallbacks
-        if (UiHelper.tapByDescContains("Pay £") || UiHelper.tapByDescContains("Pay")) {
-            pause(4000);
-            if (reachedDetails()) {
+        int attempts = Math.min(cards.size(), 3);
+        for (int i = 0; i < attempts; i++) {
+            List<WebElement> current = findResultCards();
+            if (current.isEmpty()) {
+                break;
+            }
+            WebElement card = current.get(Math.min(i, current.size() - 1));
+            Rectangle rect = card.getRect();
+            try {
+                card.click();
+            } catch (Exception ignored) {
+                // fall through
+            }
+            if (waitUntilLeftResults(8)) {
                 return;
             }
-        }
-
-        WebElement card = findResultCards().isEmpty() ? cards.get(0) : findResultCards().get(0);
-        Rectangle rect = card.getRect();
-        try {
-            card.click();
-            pause(4000);
-            if (reachedDetails()) {
-                return;
+            for (double ratio : new double[]{0.92, 0.85, 0.70}) {
+                tapAt(rect, ratio);
+                if (waitUntilLeftResults(6)) {
+                    return;
+                }
             }
-        } catch (Exception ignored) {
-            // coordinate tap
-        }
-        for (double ratio : new double[]{0.92, 0.85, 0.75, 0.50}) {
-            tapAt(rect, ratio);
-            pause(3500);
-            if (reachedDetails()) {
+            adbTap(rect.x + rect.width / 2, rect.y + (int) (rect.height * 0.90));
+            if (waitUntilLeftResults(8)) {
                 return;
-            }
-            cards = findResultCards();
-            if (!cards.isEmpty()) {
-                rect = cards.get(0).getRect();
             }
         }
         Assert.fail("Selected flight card but details / price screen did not open");
+    }
+
+    private boolean tapPayButtonAndWait() {
+        try {
+            List<WebElement> payButtons = driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionContains(\"Pay\").clickable(true)"));
+            if (payButtons.isEmpty()) {
+                payButtons = driver.findElements(AppiumBy.androidUIAutomator(
+                        "new UiSelector().descriptionContains(\"Pay £\")"));
+            }
+            if (!payButtons.isEmpty()) {
+                WebElement pay = payButtons.get(0);
+                Rectangle rect = pay.getRect();
+                pay.click();
+                if (waitUntilLeftResults(10)) {
+                    return true;
+                }
+                adbTap(rect.x + rect.width / 2, rect.y + rect.height / 2);
+                return waitUntilLeftResults(10);
+            }
+        } catch (Exception e) {
+            System.out.println("[Results] Pay tap failed: " + e.getMessage());
+        }
+        if (UiHelper.tapByDescContains("Pay £") || UiHelper.tapByDescContains("Pay")) {
+            return waitUntilLeftResults(10);
+        }
+        return false;
+    }
+
+    private boolean waitUntilLeftResults(int seconds) {
+        long deadline = System.currentTimeMillis() + seconds * 1000L;
+        while (System.currentTimeMillis() < deadline) {
+            if (reachedDetails()) {
+                return true;
+            }
+            if (!isResultsChromeVisible()) {
+                pause(1500);
+                return reachedDetails() || !isResultsChromeVisible();
+            }
+            pause(500);
+        }
+        return reachedDetails();
+    }
+
+    private boolean isResultsChromeVisible() {
+        var previous = driver.manage().timeouts().getImplicitWaitTimeout();
+        try {
+            driver.manage().timeouts().implicitlyWait(Duration.ZERO);
+            return !driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionContains(\"Cheapest\")")).isEmpty()
+                    && !driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionContains(\"Fastest\")")).isEmpty();
+        } finally {
+            try {
+                driver.manage().timeouts().implicitlyWait(previous);
+            } catch (Exception ignored) {
+                // ignore
+            }
+        }
+    }
+
+    private void adbTap(int x, int y) {
+        try {
+            String udid = com.travelhouse.config.ConfigReader.get("device.udid");
+            ProcessBuilder pb = (udid == null || udid.isBlank())
+                    ? new ProcessBuilder("adb", "shell", "input", "tap", String.valueOf(x), String.valueOf(y))
+                    : new ProcessBuilder("adb", "-s", udid, "shell", "input", "tap",
+                    String.valueOf(x), String.valueOf(y));
+            pb.redirectErrorStream(true).start().waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+            System.out.println("[Results] adb tap at " + x + "," + y);
+        } catch (Exception e) {
+            System.out.println("[Results] adb tap failed: " + e.getMessage());
+        }
     }
 
     private boolean reachedDetails() {
@@ -297,7 +374,9 @@ public class SearchResultsPage {
                 "Terms and Conditions",
                 "My Travellers",
                 "Traveller Information",
-                "Payment method"
+                "Payment method",
+                "Review your trip",
+                "Flight details"
         };
         var previous = driver.manage().timeouts().getImplicitWaitTimeout();
         try {
