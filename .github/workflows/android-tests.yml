@@ -1,16 +1,9 @@
-# Travel House Appium — GitHub Actions (self-hosted Windows runner + physical device)
+# Travel House Appium — GitHub Actions (self-hosted Windows + physical device)
 #
-# Runner prerequisites:
-#   - Windows self-hosted runner labeled / default self-hosted
-#   - JDK 17, Maven, Node.js, Appium 2.x + uiautomator2, Android platform-tools (adb)
-#   - USB device authorized (adb devices shows "device")
-#   - Optional: APK under apps/ (or app already installed on device)
+# Prerequisites on the runner PC:
+#   JDK 17, Maven, Appium + uiautomator2, adb, phone connected & authorized
 #
-# Repo secrets (Settings → Secrets and variables → Actions):
-#   LOGIN_EMAIL, LOGIN_PASSWORD  — test account (overrides config.properties)
-#   DEVICE_UDID                  — optional; defaults to config.properties
-#
-# Manual run: Actions → Android Appium CI/CD → Run workflow → pick suite
+# Secrets: LOGIN_EMAIL, LOGIN_PASSWORD, DEVICE_UDID (optional)
 
 name: Android Appium CI/CD
 
@@ -57,67 +50,70 @@ jobs:
     name: Appium (${{ github.event.inputs.suite || 'dual-route' }})
     runs-on: self-hosted
     timeout-minutes: 120
-    defaults:
-      run:
-        shell: powershell
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve suite XML
-        id: suite
+      - name: Setup check
+        shell: powershell
         run: |
-          $choice = "${{ github.event.inputs.suite }}"
-          if ([string]::IsNullOrWhiteSpace($choice)) {
-            if ("${{ github.ref_name }}" -eq "main" -or "${{ github.ref_name }}" -eq "master") {
-              # main keeps full booking journey when present; dual-route is default otherwise
-              if (Test-Path "src/test/resources/regression.xml") { $choice = "regression" }
-              else { $choice = "dual-route" }
-            } else {
-              $choice = "dual-route"
-            }
-          }
-          $map = @{
-            "dual-route" = "src/test/resources/dual-route-booking.xml"
-            "smoke" = "src/test/resources/smoke.xml"
-            "regression" = "src/test/resources/regression.xml"
-          }
-          $xml = $map[$choice]
-          if (-not $xml) { $xml = "src/test/resources/dual-route-booking.xml" }
-          if (-not (Test-Path $xml)) {
-            Write-Host "Suite file missing: $xml — falling back to dual-route-booking.xml"
-            $xml = "src/test/resources/dual-route-booking.xml"
-          }
-          Write-Host "Selected suite=$choice xml=$xml"
-          "choice=$choice" >> $env:GITHUB_OUTPUT
-          "xml=$xml" >> $env:GITHUB_OUTPUT
-
-      - name: Setup check (JDK / Maven / ADB / device)
-        run: |
+          $ErrorActionPreference = "Stop"
+          Write-Host "Java:"
           java -version
+          Write-Host "Maven:"
           mvn -v
+          Write-Host "ADB:"
           adb version
+          adb kill-server
+          Start-Sleep -Seconds 2
+          adb start-server
+          Start-Sleep -Seconds 2
           adb devices -l
-          $devices = @(adb devices | Select-String "`tdevice$")
-          if ($devices.Count -eq 0) { throw "No Android device connected on the self-hosted runner" }
+          $ready = $false
+          for ($i = 1; $i -le 6; $i++) {
+            $devices = @(adb devices | Where-Object { $_ -match "\tdevice$" })
+            if ($devices.Count -gt 0) {
+              Write-Host "Device ready: $($devices[0])"
+              $ready = $true
+              break
+            }
+            Write-Host "Waiting for device attempt $i/6 ..."
+            Start-Sleep -Seconds 5
+            adb devices -l
+          }
+          if (-not $ready) {
+            throw "No Android device connected. Plug in the phone, enable USB debugging, tap Allow, then re-run."
+          }
 
-      - name: Run Appium suite via CI script
+      - name: Run Appium suite
+        shell: powershell
         env:
           LOGIN_EMAIL: ${{ secrets.LOGIN_EMAIL }}
           LOGIN_PASSWORD: ${{ secrets.LOGIN_PASSWORD }}
           DEVICE_UDID: ${{ secrets.DEVICE_UDID }}
           APPIUM_SERVER_URL: ${{ secrets.APPIUM_SERVER_URL }}
+          SUITE_INPUT: ${{ github.event.inputs.suite }}
+          SKIP_APPIUM: ${{ github.event.inputs.skip_appium_start }}
         run: |
-          $skip = "${{ github.event.inputs.skip_appium_start }}" -eq "true"
-          $args = @{
-            SuiteXml = "${{ steps.suite.outputs.xml }}"
+          $ErrorActionPreference = "Stop"
+          $choice = $env:SUITE_INPUT
+          if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "dual-route" }
+          switch ($choice) {
+            "smoke"       { $xml = "src/test/resources/smoke.xml" }
+            "regression"  { $xml = "src/test/resources/regression.xml" }
+            default       { $xml = "src/test/resources/dual-route-booking.xml"; $choice = "dual-route" }
           }
-          if ($skip) { $args.SkipAppiumStart = $true }
-          & .\scripts\ci-run.ps1 @args
+          Write-Host "Running suite=$choice xml=$xml"
+          $skip = ($env:SKIP_APPIUM -eq "true")
+          if ($skip) {
+            & .\scripts\ci-run.ps1 -SuiteXml $xml -SkipAppiumStart
+          } else {
+            & .\scripts\ci-run.ps1 -SuiteXml $xml
+          }
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Upload HTML reports & screenshots
+      - name: Upload HTML reports and screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -131,21 +127,19 @@ jobs:
 
       - name: Job summary
         if: always()
+        shell: powershell
         run: |
-          $report = "reports/TravelHouse_AppBehaviour_PassFail_Report.html"
-          if (-not (Test-Path $report)) { $report = "reports/TravelHouse_FlightBooking_Summary.html" }
-          @"
-          ## Travel House Appium CI
-
-          | Item | Value |
-          | --- | --- |
-          | Branch | `${{ github.ref_name }}` |
-          | Suite | `${{ steps.suite.outputs.choice }}` |
-          | XML | `${{ steps.suite.outputs.xml }}` |
-          | Report artifact | `travelhouse-appium-reports-${{ github.run_number }}` |
-
-          Download the artifact for the **App Behaviour Pass/Fail** HTML report.
-          "@ | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
-          if (Test-Path $report) {
-            Write-Host "Primary report present: $report"
-          }
+          $suite = $env:SUITE_INPUT
+          if ([string]::IsNullOrWhiteSpace($suite)) { $suite = "dual-route" }
+          $lines = @(
+            "## Travel House Appium CI",
+            "",
+            "| Item | Value |",
+            "| --- | --- |",
+            "| Branch | ${{ github.ref_name }} |",
+            "| Suite | $suite |",
+            "| Report artifact | travelhouse-appium-reports-${{ github.run_number }} |",
+            "",
+            "Download the artifact for the App Behaviour Pass/Fail HTML report."
+          )
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ($lines -join "`n") -Encoding utf8

@@ -32,7 +32,7 @@ function Test-AppiumUp {
 }
 
 if (-not $SkipDeviceCheck) {
-    $devices = @(adb devices 2>$null | Select-String "`tdevice$")
+    $devices = @(adb devices 2>$null | Where-Object { $_ -match "\tdevice$" })
     if ($devices.Count -eq 0) {
         Write-Host "[CI] FAIL: No Android device in 'device' state (adb devices)" -ForegroundColor Red
         adb devices -l
