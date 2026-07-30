@@ -39,6 +39,8 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
         HomePage home = new HomePage();
         home.waitForUiReady();
         PermissionDialog.dismissAll(6);
+        // Prior CI runs often leave the app on results / booking — get back to Home or Login first
+        recoverToHomeOrLogin(home);
 
         // Already logged in → Home
         if (home.isHomeDisplayed()) {
@@ -71,16 +73,8 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
         }
 
         PermissionDialog.handlePostLoginDialogs();
+        recoverToHomeOrLogin(home);
         openHomeReady(home);
-        PermissionDialog.handlePostLoginDialogs();
-        openHomeReady(home);
-        if (!home.isHomeDisplayed()) {
-            // Last resort: relaunch activity and dismiss dialogs again
-            home.bringAppToForeground();
-            pause(2000);
-            PermissionDialog.handlePostLoginDialogs();
-            openHomeReady(home);
-        }
         Assert.assertTrue(home.isHomeDisplayed(), "Home Page should be displayed after login");
         ExtentReportManager.logInfo("Logged in with configured email — Home visible");
     }
@@ -248,6 +242,42 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
             }
             pause(800);
         }
+    }
+
+    /**
+     * Escape leftover results/booking screens from a previous run so Login/Home can proceed.
+     */
+    private void recoverToHomeOrLogin(HomePage home) {
+        LoginPage login = new LoginPage();
+        for (int i = 0; i < 10; i++) {
+            PermissionDialog.dismissAll(1);
+            PermissionDialog.handlePostLoginDialogs();
+            if (home.isHomeDisplayed() || login.isLoginScreenVisible()) {
+                if (home.isHomeDisplayed()) {
+                    home.scrollToFlightSearchForm();
+                }
+                return;
+            }
+            if (UiHelper.waitForDescContains("Cheapest", 1)
+                    || UiHelper.waitForDescContains("Fastest", 1)
+                    || UiHelper.waitForDescContains("Pay £", 1)
+                    || UiHelper.waitForDescContains("Proceed with payment", 1)
+                    || UiHelper.waitForDescContains("My Travellers", 1)) {
+                if (UiHelper.tapByDesc("Home\nTab 1 of 4") || UiHelper.tapByDescContains("Tab 1 of 4")) {
+                    pause(1200);
+                    continue;
+                }
+            }
+            try {
+                DriverManager.getDriver().navigate().back();
+            } catch (Exception ignored) {
+                home.bringAppToForeground();
+            }
+            pause(900);
+        }
+        home.bringAppToForeground();
+        home.openHomeTab();
+        pause(1500);
     }
 
     private void navigateBackToHome() {
