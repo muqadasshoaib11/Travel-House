@@ -41,10 +41,17 @@ if (-not $SkipDeviceCheck) {
         exit 1
     }
     Write-Host "[CI] Device OK: $($devices[0].ToString().Trim())" -ForegroundColor Green
-    # Clear stale UiAutomator2 processes that can freeze findElements forever
-    Write-Host "[CI] Restarting UiAutomator2 on device..."
+    # Wake phone + clear stale UiAutomator2 processes that can freeze findElements forever
+    Write-Host "[CI] Waking device and restarting UiAutomator2..."
+    cmd /c "adb shell input keyevent KEYCODE_WAKEUP"
+    cmd /c "adb shell input keyevent KEYCODE_MENU"
     cmd /c "adb shell am force-stop io.appium.uiautomator2.server"
     cmd /c "adb shell am force-stop io.appium.uiautomator2.server.test"
+    if ($env:DEVICE_UDID) {
+      cmd /c "adb -s $env:DEVICE_UDID shell am force-stop com.travelhouse.uk.app"
+    } else {
+      cmd /c "adb shell am force-stop com.travelhouse.uk.app"
+    }
 }
 
 $appiumProc = $null

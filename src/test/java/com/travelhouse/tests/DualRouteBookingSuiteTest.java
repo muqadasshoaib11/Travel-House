@@ -72,6 +72,15 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
 
         PermissionDialog.handlePostLoginDialogs();
         openHomeReady(home);
+        PermissionDialog.handlePostLoginDialogs();
+        openHomeReady(home);
+        if (!home.isHomeDisplayed()) {
+            // Last resort: relaunch activity and dismiss dialogs again
+            home.bringAppToForeground();
+            pause(2000);
+            PermissionDialog.handlePostLoginDialogs();
+            openHomeReady(home);
+        }
         Assert.assertTrue(home.isHomeDisplayed(), "Home Page should be displayed after login");
         ExtentReportManager.logInfo("Logged in with configured email — Home visible");
     }
