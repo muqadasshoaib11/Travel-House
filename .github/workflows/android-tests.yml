@@ -68,15 +68,14 @@ jobs:
       - name: Wait for Android device
         shell: powershell
         run: |
-          # GHA sets ErrorActionPreference=Stop; adb writes status to stderr and would abort.
+          # GHA sets ErrorActionPreference=Stop; keep Continue for native tools.
+          # Do NOT adb kill-server: the runner service is NETWORK SERVICE and cannot
+          # reopen USB. It must reuse the interactive user's already-running adb daemon.
           $ErrorActionPreference = "Continue"
-          cmd /c "adb kill-server"
-          Start-Sleep -Seconds 2
-          cmd /c "adb start-server"
-          Start-Sleep -Seconds 3
+          Write-Host "whoami=$(whoami)"
           cmd /c "adb devices -l"
           $ready = $false
-          for ($i = 1; $i -le 10; $i++) {
+          for ($i = 1; $i -le 15; $i++) {
             $raw = cmd /c "adb devices"
             $devices = @($raw -split "`r?`n" | Where-Object { $_ -match "\tdevice$" })
             if ($devices.Count -gt 0) {
@@ -84,12 +83,12 @@ jobs:
               $ready = $true
               break
             }
-            Write-Host "Waiting for device attempt $i/10 - plug in phone and authorize USB debugging"
-            Start-Sleep -Seconds 6
+            Write-Host "Waiting for device attempt $i/15 - keep phone unlocked; ensure 'adb start-server' was run in your desktop session"
+            Start-Sleep -Seconds 4
             cmd /c "adb devices -l"
           }
           if (-not $ready) {
-            Write-Host "No Android device connected"
+            Write-Host "No Android device connected. On the runner PC, in an interactive terminal run: adb start-server && adb devices"
             exit 1
           }
 
