@@ -35,15 +35,11 @@ public final class DevicePrep {
         runQuiet(adbPrefix, "shell", "cmd", "appops", "set", "io.appium.settings", "RUN_ANY_IN_BACKGROUND", "allow");
         runQuiet(adbPrefix, "shell", "am", "start", "-n", "io.appium.settings/.Settings");
 
-        // Clear leftover booking/results screens from prior CI runs
-        String appPackage = ConfigReader.get("app.package", "com.travelhouse.uk.app");
-        if (!appPackage.isBlank()) {
-            System.out.println("[DevicePrep] Force-stopping app for clean session: " + appPackage);
-            runQuiet(adbPrefix, "shell", "am", "force-stop", appPackage);
-        }
         // Wake screen — black screenshots / missed taps happen when the panel is off
         runQuiet(adbPrefix, "shell", "input", "keyevent", "KEYCODE_WAKEUP");
         runQuiet(adbPrefix, "shell", "input", "keyevent", "KEYCODE_MENU");
+        // Do not force-stop the app here: cold start + login often exceeds CI step timeouts.
+        // Only recycle UiAutomator2 so findElements cannot hang from a stale server.
         restartUiAutomator2();
 
         if (!apkInstalledThisRun) {

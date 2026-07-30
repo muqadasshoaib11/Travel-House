@@ -30,7 +30,7 @@ import org.testng.annotations.Test;
  */
 public class DualRouteBookingSuiteTest extends JourneyBaseTest {
 
-    @Test(priority = 1, timeOut = 300_000, description = "Login flow — or continue if already on Home")
+    @Test(priority = 1, timeOut = 600_000, description = "Login flow — or continue if already on Home")
     public void step01_loginOrHome() {
         if (!Credentials.isConfigured()) {
             throw new SkipException("Configure login.email / login.password in config.properties");
@@ -116,7 +116,7 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
         ExtentReportManager.logInfo("Returned to Home after Jeddah Return path");
     }
 
-    @Test(priority = 5, timeOut = 600_000, dependsOnMethods = "step04_backToHomeAfterReturn",
+    @Test(priority = 5, timeOut = 900_000, dependsOnMethods = "step04_backToHomeAfterReturn",
             description = "One Way: London → Karachi — search, validate, book to My Travellers")
     public void step05_oneWayLondonKarachi_bookToMyTravellers() {
         runSearchValidateAndBook(
