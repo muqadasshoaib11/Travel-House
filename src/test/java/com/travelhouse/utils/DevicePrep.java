@@ -47,6 +47,24 @@ public final class DevicePrep {
         }
     }
 
+    /**
+     * Force-restart UiAutomator2 on-device servers when findElements hangs or the session freezes.
+     */
+    public static void restartUiAutomator2() {
+        String udid = ConfigReader.get("device.udid");
+        String[] adbPrefix = udid.isBlank()
+                ? new String[]{"adb"}
+                : new String[]{"adb", "-s", udid};
+        System.out.println("[DevicePrep] Restarting UiAutomator2 server processes");
+        runQuiet(adbPrefix, "shell", "am", "force-stop", "io.appium.uiautomator2.server");
+        runQuiet(adbPrefix, "shell", "am", "force-stop", "io.appium.uiautomator2.server.test");
+        try {
+            TimeUnit.SECONDS.sleep(2);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
     private static void installApkIfPresent(String[] adbPrefix) {
         Optional<Path> apk = ApkResolver.resolve();
         if (apk.isEmpty()) {

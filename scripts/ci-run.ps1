@@ -41,6 +41,10 @@ if (-not $SkipDeviceCheck) {
         exit 1
     }
     Write-Host "[CI] Device OK: $($devices[0].ToString().Trim())" -ForegroundColor Green
+    # Clear stale UiAutomator2 processes that can freeze findElements forever
+    Write-Host "[CI] Restarting UiAutomator2 on device..."
+    cmd /c "adb shell am force-stop io.appium.uiautomator2.server"
+    cmd /c "adb shell am force-stop io.appium.uiautomator2.server.test"
 }
 
 $appiumProc = $null

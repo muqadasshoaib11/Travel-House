@@ -3,9 +3,9 @@ package com.travelhouse.base;
 import com.travelhouse.config.CapabilityFactory;
 import com.travelhouse.config.ConfigReader;
 import com.travelhouse.utils.DevicePrep;
+import io.appium.java_client.AppiumClientConfig;
 import io.appium.java_client.android.AndroidDriver;
 import io.appium.java_client.android.options.UiAutomator2Options;
-import org.openqa.selenium.remote.http.ClientConfig;
 import org.openqa.selenium.support.ui.WebDriverWait;
 
 import java.net.URI;
@@ -26,11 +26,12 @@ public final class DriverManager {
         DevicePrep.prepareForSession();
         UiAutomator2Options options = CapabilityFactory.createAndroidOptions();
         String serverUrl = ConfigReader.get("appium.server.url", "http://127.0.0.1:4723");
-        // Bound HTTP waits so a stuck UiAutomator findElements cannot hang CI for hours
-        int readTimeoutSec = ConfigReader.getInt("appium.read.timeout.seconds", 90);
-        ClientConfig clientConfig = ClientConfig.defaultConfig()
+        // Bound HTTP waits so a stuck UiAutomator findElements cannot hang CI forever
+        int readTimeoutSec = ConfigReader.getInt("appium.read.timeout.seconds", 45);
+        AppiumClientConfig clientConfig = AppiumClientConfig.defaultConfig()
                 .baseUri(URI.create(serverUrl))
-                .readTimeout(Duration.ofSeconds(readTimeoutSec));
+                .readTimeout(Duration.ofSeconds(readTimeoutSec))
+                .connectionTimeout(Duration.ofSeconds(30));
         AndroidDriver driver = new AndroidDriver(clientConfig, options);
         // Keep implicit wait low — Flutter trees + many findElements otherwise stall for minutes
         driver.manage().timeouts().implicitlyWait(

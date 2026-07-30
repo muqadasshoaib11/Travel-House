@@ -30,7 +30,7 @@ import org.testng.annotations.Test;
  */
 public class DualRouteBookingSuiteTest extends JourneyBaseTest {
 
-    @Test(priority = 1, description = "Login flow — or continue if already on Home")
+    @Test(priority = 1, timeOut = 300_000, description = "Login flow — or continue if already on Home")
     public void step01_loginOrHome() {
         if (!Credentials.isConfigured()) {
             throw new SkipException("Configure login.email / login.password in config.properties");
@@ -76,7 +76,7 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
         ExtentReportManager.logInfo("Logged in with configured email — Home visible");
     }
 
-    @Test(priority = 2, dependsOnMethods = "step01_loginOrHome",
+    @Test(priority = 2, timeOut = 300_000, dependsOnMethods = "step01_loginOrHome",
             description = "Scroll Home up/down and verify all content is visible")
     public void step02_verifyHomeScreenContent() {
         HomePage home = new HomePage();
@@ -86,7 +86,7 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
         ExtentReportManager.logInfo("Home screen content verified (scroll up/down)");
     }
 
-    @Test(priority = 3, dependsOnMethods = "step02_verifyHomeScreenContent",
+    @Test(priority = 3, timeOut = 600_000, dependsOnMethods = "step02_verifyHomeScreenContent",
             description = "Return: London → Jeddah — search, validate, book to My Travellers")
     public void step03_returnLondonJeddah_bookToMyTravellers() {
         runSearchValidateAndBook(
@@ -96,7 +96,7 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
                 TestDataReader.get("flight.return.destination.query", "Jeddah"));
     }
 
-    @Test(priority = 4, dependsOnMethods = "step03_returnLondonJeddah_bookToMyTravellers",
+    @Test(priority = 4, timeOut = 300_000, dependsOnMethods = "step03_returnLondonJeddah_bookToMyTravellers",
             description = "Return to Home after Return booking path")
     public void step04_backToHomeAfterReturn() {
         navigateBackToHome();
@@ -107,7 +107,7 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
         ExtentReportManager.logInfo("Returned to Home after Jeddah Return path");
     }
 
-    @Test(priority = 5, dependsOnMethods = "step04_backToHomeAfterReturn",
+    @Test(priority = 5, timeOut = 600_000, dependsOnMethods = "step04_backToHomeAfterReturn",
             description = "One Way: London → Karachi — search, validate, book to My Travellers")
     public void step05_oneWayLondonKarachi_bookToMyTravellers() {
         runSearchValidateAndBook(
