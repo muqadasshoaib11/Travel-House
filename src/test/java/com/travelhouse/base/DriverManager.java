@@ -11,60 +11,62 @@ import org.openqa.selenium.support.ui.WebDriverWait;
 import java.net.URI;
 import java.time.Duration;
 
+/**
+ * Single shared Android driver for this suite.
+ * Not ThreadLocal — TestNG {@code timeOut} runs the test body on a worker thread.
+ */
 public final class DriverManager {
 
-    private static final ThreadLocal<AndroidDriver> DRIVER = new ThreadLocal<>();
-    private static final ThreadLocal<WebDriverWait> WAIT = new ThreadLocal<>();
+    private static volatile AndroidDriver driver;
+    private static volatile WebDriverWait wait;
 
     private DriverManager() {
     }
 
-    public static void startDriver() {
-        if (DRIVER.get() != null) {
+    public static synchronized void startDriver() {
+        if (driver != null) {
             return;
         }
         DevicePrep.prepareForSession();
         UiAutomator2Options options = CapabilityFactory.createAndroidOptions();
         String serverUrl = ConfigReader.get("appium.server.url", "http://127.0.0.1:4723");
-        // Bound HTTP waits so a stuck UiAutomator findElements cannot hang CI forever
         int readTimeoutSec = ConfigReader.getInt("appium.read.timeout.seconds", 45);
         AppiumClientConfig clientConfig = AppiumClientConfig.defaultConfig()
                 .baseUri(URI.create(serverUrl))
                 .readTimeout(Duration.ofSeconds(readTimeoutSec))
                 .connectionTimeout(Duration.ofSeconds(30));
-        AndroidDriver driver = new AndroidDriver(clientConfig, options);
-        // Keep implicit wait low — Flutter trees + many findElements otherwise stall for minutes
-        driver.manage().timeouts().implicitlyWait(
+        AndroidDriver created = new AndroidDriver(clientConfig, options);
+        created.manage().timeouts().implicitlyWait(
                 Duration.ofSeconds(ConfigReader.getInt("implicit.wait.seconds", 2)));
-        DRIVER.set(driver);
-        WAIT.set(new WebDriverWait(driver,
-                Duration.ofSeconds(ConfigReader.getInt("explicit.wait.seconds", 20))));
+        driver = created;
+        wait = new WebDriverWait(created,
+                Duration.ofSeconds(ConfigReader.getInt("explicit.wait.seconds", 20)));
     }
 
     public static AndroidDriver getDriver() {
-        AndroidDriver driver = DRIVER.get();
-        if (driver == null) {
+        AndroidDriver current = driver;
+        if (current == null) {
             throw new IllegalStateException("Driver not started. Call DriverManager.startDriver() first.");
         }
-        return driver;
+        return current;
     }
 
     public static WebDriverWait getWait() {
-        WebDriverWait wait = WAIT.get();
-        if (wait == null) {
+        WebDriverWait current = wait;
+        if (current == null) {
             throw new IllegalStateException("Wait not initialized. Call DriverManager.startDriver() first.");
         }
-        return wait;
+        return current;
     }
 
-    public static void quitDriver() {
-        AndroidDriver driver = DRIVER.get();
-        if (driver != null) {
+    public static synchronized void quitDriver() {
+        AndroidDriver current = driver;
+        if (current != null) {
             try {
-                driver.quit();
+                current.quit();
             } finally {
-                DRIVER.remove();
-                WAIT.remove();
+                driver = null;
+                wait = null;
             }
         }
     }
