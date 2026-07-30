@@ -138,6 +138,12 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
         pause(5000); // allow Jeddah/Karachi results to load
 
         SearchResultsPage results = new SearchResultsPage();
+        // If still on Home, tap Search again (Flutter sometimes swallows the first tap)
+        if (UiHelper.waitForDescContains("Search Flight", 2) && !results.isResultsScreen()) {
+            home.scrollToFlightSearchForm();
+            home.tapSearchFlight();
+            pause(8000);
+        }
         results.waitForResults();
         Assert.assertTrue(results.hasResults(),
                 tripLabel + " results (" + origin + " → " + destination + ") should display");

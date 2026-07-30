@@ -29,14 +29,21 @@ public class SearchResultsPage {
 
     public void waitForResults() {
         boolean ready = false;
-        for (int i = 0; i < 12; i++) {
-            if (!findResultCards().isEmpty()) {
+        for (int i = 0; i < 18; i++) {
+            if (isResultsScreen() && !findResultCards().isEmpty()) {
                 ready = true;
                 break;
             }
+            // Still on Home search form — wait / retry scroll only after leaving Home
+            if (UiHelper.waitForDescContains("Search Flight", 1)
+                    && !UiHelper.waitForDescContains("Cheapest", 1)) {
+                pause(2000);
+                continue;
+            }
             if (UiHelper.waitForDescContains("Cheapest", 3)
                     || UiHelper.waitForDescContains("Fastest", 2)
-                    || UiHelper.waitForDescContains("Pay", 2)) {
+                    || UiHelper.waitForDescContains("Pay", 2)
+                    || UiHelper.waitForDescContains("£", 2)) {
                 pause(1500);
                 if (!findResultCards().isEmpty()) {
                     ready = true;
@@ -53,12 +60,22 @@ public class SearchResultsPage {
         }
     }
 
+    /** True when flight results chrome is visible (not the Home search form). */
+    public boolean isResultsScreen() {
+        return UiHelper.waitForDescContains("Cheapest", 1)
+                || UiHelper.waitForDescContains("Fastest", 1)
+                || (!driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Pay\")")).isEmpty()
+                && driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Search Flight\")")).isEmpty());
+    }
+
     public boolean hasResults() {
         waitForResults();
-        return !findResultCards().isEmpty()
+        return isResultsScreen() && (!findResultCards().isEmpty()
                 || !driver.findElements(AppiumBy.accessibilityId("Cheapest")).isEmpty()
                 || !driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Cheapest\")")).isEmpty();
+                "new UiSelector().descriptionContains(\"Cheapest\")")).isEmpty());
     }
 
     public int getResultCountEstimate() {
@@ -148,6 +165,10 @@ public class SearchResultsPage {
 
     private void assertListingComplete(String desc, int index, String expectedDestination) {
         String lower = desc.toLowerCase();
+        // Ignore Home-form nodes accidentally collected (Departure date / Search Flight)
+        if (lower.contains("search flight") || (lower.contains("passenger") && lower.contains("economy"))) {
+            return;
+        }
         List<String> missing = new ArrayList<>();
 
         boolean hasRoute = lower.contains("departure")
@@ -156,6 +177,9 @@ public class SearchResultsPage {
                 || lower.contains("jeddah")
                 || lower.contains("karachi")
                 || lower.contains("airport")
+                || lower.contains("lhr")
+                || lower.contains("jed")
+                || lower.contains("khi")
                 || (expectedDestination != null && !expectedDestination.isBlank()
                 && lower.contains(expectedDestination.toLowerCase()));
         if (!hasRoute) {
@@ -184,14 +208,12 @@ public class SearchResultsPage {
         UiHelper.waitForDescContains("Pay", 20);
     }
 
+    /**
+     * Prefer priced flight rows. Do NOT match bare "Departure" — that hits the Home date field.
+     */
     private List<WebElement> findResultCards() {
         List<WebElement> cards = driver.findElements(AppiumBy.androidUIAutomator(
                 "new UiSelector().descriptionContains(\"Pay\")"));
-        if (!cards.isEmpty()) {
-            return cards;
-        }
-        cards = driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Departure\")"));
         if (!cards.isEmpty()) {
             return cards;
         }
@@ -200,9 +222,25 @@ public class SearchResultsPage {
         if (!cards.isEmpty()) {
             return cards;
         }
-        // Some builds expose flight rows as clickable nodes with airport codes / times
-        return driver.findElements(AppiumBy.androidUIAutomator(
+        // Flight rows often embed duration like "7h 30m" with airport codes
+        cards = driver.findElements(AppiumBy.androidUIAutomator(
                 "new UiSelector().descriptionContains(\"h \").descriptionContains(\"m\")"));
+        if (!cards.isEmpty()) {
+            return filterOutHomeNodes(cards);
+        }
+        return Collections.emptyList();
+    }
+
+    private List<WebElement> filterOutHomeNodes(List<WebElement> candidates) {
+        List<WebElement> filtered = new ArrayList<>();
+        for (WebElement el : candidates) {
+            String desc = safeDesc(el).toLowerCase();
+            if (desc.contains("search flight") || desc.contains("flying from") || desc.contains("going to")) {
+                continue;
+            }
+            filtered.add(el);
+        }
+        return filtered;
     }
 
     private void selectFirstResultCard() {
