@@ -8,7 +8,7 @@
 #   $env:LOGIN_EMAIL / $env:LOGIN_PASSWORD / $env:DEVICE_UDID
 
 param(
-    [string]$SuiteXml = "src/test/resources/dual-route-booking.xml",
+    [string]$SuiteXml = "src/test/resources/ci-health.xml",
     [int]$AppiumPort = 4723,
     [switch]$SkipAppiumStart,
     [switch]$SkipDeviceCheck

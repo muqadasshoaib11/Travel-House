@@ -1,0 +1,12 @@
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="Travel House CI Health" verbose="1" parallel="false">
+    <listeners>
+        <listener class-name="com.travelhouse.utils.TestListener"/>
+    </listeners>
+
+    <test name="CI Health Gate">
+        <classes>
+            <class name="com.travelhouse.tests.CiHealthCheckTest"/>
+        </classes>
+    </test>
+</suite>

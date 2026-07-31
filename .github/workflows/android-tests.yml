@@ -9,9 +9,10 @@ on:
       suite:
         description: "TestNG suite to run"
         required: true
-        default: dual-route
+        default: ci-health
         type: choice
         options:
+          - ci-health
           - dual-route
           - smoke
           - regression
@@ -43,7 +44,7 @@ concurrency:
 
 jobs:
   appium:
-    name: Appium (${{ github.event.inputs.suite || 'dual-route' }})
+    name: Appium (${{ github.event.inputs.suite || 'ci-health' }})
     runs-on: self-hosted
     timeout-minutes: 120
 
@@ -103,11 +104,12 @@ jobs:
           SKIP_APPIUM: ${{ github.event.inputs.skip_appium_start }}
         run: |
           $choice = $env:SUITE_INPUT
-          if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "dual-route" }
+          if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "ci-health" }
           switch ($choice) {
             "smoke"      { $xml = "src\test\resources\smoke.xml" }
             "regression" { $xml = "src\test\resources\regression.xml" }
-            default      { $xml = "src\test\resources\dual-route-booking.xml"; $choice = "dual-route" }
+            "dual-route" { $xml = "src\test\resources\dual-route-booking.xml" }
+            default      { $xml = "src\test\resources\ci-health.xml"; $choice = "ci-health" }
           }
           Write-Host "Running suite=$choice xml=$xml"
           if (-not (Test-Path $xml)) { throw "Suite XML not found: $xml" }
