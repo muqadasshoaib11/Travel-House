@@ -54,33 +54,28 @@ if (-not $SkipDeviceCheck) {
 
 $appiumProc = $null
 if (-not $SkipAppiumStart) {
-    # Always recycle Appium for CI — a hung prior session freezes findElements forever
-    Write-Host "[CI] Recycling Appium on :$AppiumPort ..." -ForegroundColor Yellow
-    try {
-        $conns = Get-NetTCPConnection -LocalPort $AppiumPort -ErrorAction SilentlyContinue |
-            Select-Object -ExpandProperty OwningProcess -Unique
-        foreach ($procId in $conns) {
-            if ($procId -and $procId -gt 0) {
-                Write-Host "[CI] Stopping process on port $AppiumPort pid=$procId"
-                Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
-            }
+    if (Test-AppiumUp) {
+        Write-Host "[CI] Appium already running on :$AppiumPort" -ForegroundColor Green
+    } else {
+        Write-Host "[CI] Starting Appium on :$AppiumPort ..." -ForegroundColor Yellow
+        $appiumCmd = (Get-Command appium -ErrorAction SilentlyContinue)
+        if (-not $appiumCmd) {
+            Write-Host "[CI] FAIL: 'appium' not found on PATH" -ForegroundColor Red
+            exit 1
         }
-    } catch {
-        Write-Host "[CI] Port recycle note: $($_.Exception.Message)"
+        $appiumProc = Start-Process -FilePath $appiumCmd.Source -ArgumentList @("--port", "$AppiumPort") -PassThru -WindowStyle Hidden
+        $ready = $false
+        for ($i = 0; $i -lt 30; $i++) {
+            Start-Sleep -Seconds 2
+            if (Test-AppiumUp) { $ready = $true; break }
+        }
+        if (-not $ready) {
+            Write-Host "[CI] FAIL: Appium did not become ready on :$AppiumPort" -ForegroundColor Red
+            if ($appiumProc -and -not $appiumProc.HasExited) { Stop-Process -Id $appiumProc.Id -Force -ErrorAction SilentlyContinue }
+            exit 1
+        }
+        Write-Host "[CI] Appium ready (pid=$($appiumProc.Id))" -ForegroundColor Green
     }
-    Start-Sleep -Seconds 2
-    $appiumProc = Start-Process -FilePath "appium" -ArgumentList @("--port", "$AppiumPort") -PassThru -WindowStyle Hidden
-    $ready = $false
-    for ($i = 0; $i -lt 30; $i++) {
-        Start-Sleep -Seconds 2
-        if (Test-AppiumUp) { $ready = $true; break }
-    }
-    if (-not $ready) {
-        Write-Host "[CI] FAIL: Appium did not become ready on :$AppiumPort" -ForegroundColor Red
-        if ($appiumProc -and -not $appiumProc.HasExited) { Stop-Process -Id $appiumProc.Id -Force -ErrorAction SilentlyContinue }
-        exit 1
-    }
-    Write-Host "[CI] Appium ready (pid=$($appiumProc.Id))" -ForegroundColor Green
 }
 
 # Build Maven -D overrides from env (CI secrets)
