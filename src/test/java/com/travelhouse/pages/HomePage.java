@@ -135,7 +135,10 @@ public class HomePage {
     }
 
     public boolean isHomeDisplayed() {
-        return UiHelper.isAnyDisplayed(searchFlight, oneWay, flyingFrom, goingTo);
+        return UiHelper.isAnyDisplayed(searchFlight, oneWay, flyingFrom, goingTo)
+                || UiHelper.waitForDescContains("Search Flight", 1)
+                || UiHelper.waitForDescContains("Hi ", 1)
+                || UiHelper.waitForDescContains("Flying From", 1);
     }
 
     /**

@@ -35,9 +35,13 @@ public final class DevicePrep {
         runQuiet(adbPrefix, "shell", "cmd", "appops", "set", "io.appium.settings", "RUN_ANY_IN_BACKGROUND", "allow");
         runQuiet(adbPrefix, "shell", "am", "start", "-n", "io.appium.settings/.Settings");
 
-        // Wake screen — black screenshots / missed taps happen when the panel is off
+        // Keep display on for USB-connected CI (Xiaomi otherwise blacks out mid-run)
+        runQuiet(adbPrefix, "shell", "svc", "power", "stayon", "usb");
+        runQuiet(adbPrefix, "shell", "settings", "put", "system", "screen_off_timeout", "1800000");
         runQuiet(adbPrefix, "shell", "input", "keyevent", "KEYCODE_WAKEUP");
         runQuiet(adbPrefix, "shell", "input", "keyevent", "KEYCODE_MENU");
+        // Unlock swipe (no-op if already unlocked)
+        runQuiet(adbPrefix, "shell", "input", "swipe", "540", "1800", "540", "600");
         // Do not force-stop the app here: cold start + login often exceeds CI step timeouts.
         // Only recycle UiAutomator2 so findElements cannot hang from a stale server.
         restartUiAutomator2();

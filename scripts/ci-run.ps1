@@ -41,10 +41,13 @@ if (-not $SkipDeviceCheck) {
         exit 1
     }
     Write-Host "[CI] Device OK: $($devices[0].ToString().Trim())" -ForegroundColor Green
-    # Wake phone + clear stale UiAutomator2 processes that can freeze findElements forever
-    Write-Host "[CI] Waking device and restarting UiAutomator2..."
+    # Keep display awake — black screenshots / missed taps when Xiaomi sleeps
+    Write-Host "[CI] Keeping screen on + restarting UiAutomator2..."
+    cmd /c "adb shell svc power stayon usb"
+    cmd /c "adb shell settings put system screen_off_timeout 1800000"
     cmd /c "adb shell input keyevent KEYCODE_WAKEUP"
     cmd /c "adb shell input keyevent KEYCODE_MENU"
+    cmd /c "adb shell input swipe 540 1800 540 600"
     cmd /c "adb shell am force-stop io.appium.uiautomator2.server"
     cmd /c "adb shell am force-stop io.appium.uiautomator2.server.test"
 }
