@@ -109,29 +109,11 @@ public class HomePage {
 
     public void openHomeTab() {
         bringAppToForeground();
-        // Leave overlay screens (e.g. Recent Searches) if present — never let findElements hang forever
-        try {
-            if (UiHelper.waitForDescContains("Recent Searches", 2)
-                    && !UiHelper.waitForDescContains("Search Flight", 1)) {
-                DriverManager.getDriver().navigate().back();
-                try {
-                    Thread.sleep(1000);
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                }
-            }
-        } catch (Exception ignored) {
-            // continue — try tapping Home tab anyway
-        }
-
+        // Prefer exact Home tab desc; avoid broad "Home" contains search (hangs when UiAutomator freezes)
         if (!UiHelper.tapByDesc("Home\nTab 1 of 4")) {
-            if (!UiHelper.tapByDescContains("Tab 1 of 4")) {
-                UiHelper.tapByDescContains("Home");
-            }
+            UiHelper.tapByDescContains("Tab 1 of 4");
         }
-
-        // Wait briefly for flight search form
-        UiHelper.waitForDescContains("Search Flight", 8);
+        UiHelper.waitForDescContains("Search Flight", 5);
     }
 
     public boolean isHomeDisplayed() {
