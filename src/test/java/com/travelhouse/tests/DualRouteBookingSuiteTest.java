@@ -13,6 +13,7 @@ import com.travelhouse.pages.PriceDetailsPage;
 import com.travelhouse.pages.PriceSummaryPage;
 import com.travelhouse.pages.SearchResultsPage;
 import com.travelhouse.pages.TravellerInfoPage;
+import com.travelhouse.utils.DevicePrep;
 import com.travelhouse.utils.ExtentReportManager;
 import com.travelhouse.utils.PermissionDialog;
 import com.travelhouse.utils.UiHelper;
@@ -249,35 +250,44 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
      */
     private void recoverToHomeOrLogin(HomePage home) {
         LoginPage login = new LoginPage();
-        for (int i = 0; i < 10; i++) {
-            PermissionDialog.dismissAll(1);
-            PermissionDialog.handlePostLoginDialogs();
-            if (home.isHomeDisplayed() || login.isLoginScreenVisible()) {
-                if (home.isHomeDisplayed()) {
-                    home.scrollToFlightSearchForm();
-                }
-                return;
-            }
-            if (UiHelper.waitForDescContains("Cheapest", 1)
-                    || UiHelper.waitForDescContains("Fastest", 1)
-                    || UiHelper.waitForDescContains("Pay £", 1)
-                    || UiHelper.waitForDescContains("Proceed with payment", 1)
-                    || UiHelper.waitForDescContains("My Travellers", 1)) {
-                if (UiHelper.tapByDesc("Home\nTab 1 of 4") || UiHelper.tapByDescContains("Tab 1 of 4")) {
-                    pause(1200);
-                    continue;
-                }
-            }
+        for (int i = 0; i < 8; i++) {
             try {
-                DriverManager.getDriver().navigate().back();
-            } catch (Exception ignored) {
-                home.bringAppToForeground();
+                if (home.isHomeDisplayed() || login.isLoginScreenVisible()) {
+                    if (home.isHomeDisplayed()) {
+                        home.scrollToFlightSearchForm();
+                    }
+                    return;
+                }
+            } catch (Exception e) {
+                DevicePrep.restartUiAutomator2();
             }
-            pause(900);
+            // Prefer Home tab when bottom nav is available; otherwise system Back via adb (never hangs)
+            if (!UiHelper.tapByDesc("Home\nTab 1 of 4") && !UiHelper.tapByDescContains("Tab 1 of 4")) {
+                adbKeyEvent(4);
+            }
+            pause(800);
         }
         home.bringAppToForeground();
-        home.openHomeTab();
-        pause(1500);
+        try {
+            home.openHomeTab();
+        } catch (Exception e) {
+            DevicePrep.restartUiAutomator2();
+            adbKeyEvent(4);
+        }
+        pause(1200);
+    }
+
+    private static void adbKeyEvent(int keyCode) {
+        try {
+            String udid = com.travelhouse.config.ConfigReader.get("device.udid");
+            ProcessBuilder pb = (udid == null || udid.isBlank())
+                    ? new ProcessBuilder("adb", "shell", "input", "keyevent", String.valueOf(keyCode))
+                    : new ProcessBuilder("adb", "-s", udid, "shell", "input", "keyevent",
+                    String.valueOf(keyCode));
+            pb.redirectErrorStream(true).start().waitFor(5, java.util.concurrent.TimeUnit.SECONDS);
+        } catch (Exception ignored) {
+            // ignore
+        }
     }
 
     private void navigateBackToHome() {
