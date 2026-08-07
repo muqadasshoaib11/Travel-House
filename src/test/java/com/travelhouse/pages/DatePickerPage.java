@@ -10,12 +10,18 @@ import java.util.Locale;
 
 /**
  * Flight search date picker ("Select dates") — day cells use labels like
- * {@code Wed, 07 October 2026}.
+ * {@code Wed, 07 October 2026} (zero-padded day).
  */
 public class DatePickerPage {
 
-    private static final DateTimeFormatter CELL =
+    private static final DateTimeFormatter CELL_PADDED =
             DateTimeFormatter.ofPattern("EEE, dd MMMM yyyy", Locale.ENGLISH);
+    private static final DateTimeFormatter CELL_UNPADDED =
+            DateTimeFormatter.ofPattern("EEE, d MMMM yyyy", Locale.ENGLISH);
+    private static final DateTimeFormatter CELL_FRAGMENT_PADDED =
+            DateTimeFormatter.ofPattern("dd MMMM yyyy", Locale.ENGLISH);
+    private static final DateTimeFormatter CELL_FRAGMENT_UNPADDED =
+            DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.ENGLISH);
 
     public boolean isDisplayed() {
         return UiHelper.waitForDescContains("Select dates", 3)
@@ -33,7 +39,7 @@ public class DatePickerPage {
     public void selectDepartureAndReturn(LocalDate departure, LocalDate returnDate) {
         waitUntilVisible();
         tapDay(departure);
-        pause(600);
+        pause(800);
         tapDay(returnDate);
         pause(600);
         if (!UiHelper.tapByDesc("Apply") && !UiHelper.tapByDescContains("Apply")) {
@@ -44,35 +50,44 @@ public class DatePickerPage {
     }
 
     public void tapDay(LocalDate day) {
-        String label = CELL.format(day);
-        if (tapDayLabel(label)) {
+        if (tryTapDay(day)) {
             return;
         }
-        // Scroll calendar until the day cell is visible (future months)
-        for (int i = 0; i < 10; i++) {
-            GestureUtil.swipeUp();
+        // Prefer scrolling toward the target month from "today"
+        boolean farFuture = day.isAfter(LocalDate.now().plusDays(40));
+        for (int i = 0; i < 12; i++) {
+            if (farFuture) {
+                GestureUtil.swipeUp();
+            } else {
+                // Near-term dates are usually already on-screen or just below — nudge both ways
+                if (i % 2 == 0) {
+                    GestureUtil.swipeDown();
+                } else {
+                    GestureUtil.swipeUp();
+                }
+            }
             pause(700);
-            if (tapDayLabel(label)) {
+            if (tryTapDay(day)) {
                 return;
             }
         }
-        // Try scrolling back if we overshot
-        for (int i = 0; i < 6; i++) {
-            GestureUtil.swipeDown();
-            pause(700);
-            if (tapDayLabel(label)) {
-                return;
-            }
-        }
-        throw new IllegalStateException("Calendar day not found: " + label);
+        throw new IllegalStateException("Calendar day not found: " + CELL_PADDED.format(day)
+                + " (also tried unpadded / fragment labels)");
     }
 
-    private boolean tapDayLabel(String label) {
-        if (UiHelper.tapByDesc(label) || UiHelper.tapByDescContains(label)) {
-            ExtentReportManager.logInfo("Tapped calendar day: " + label);
-            return true;
+    private boolean tryTapDay(LocalDate day) {
+        String[] labels = {
+                CELL_PADDED.format(day),
+                CELL_UNPADDED.format(day),
+                CELL_FRAGMENT_PADDED.format(day),
+                CELL_FRAGMENT_UNPADDED.format(day)
+        };
+        for (String label : labels) {
+            if (UiHelper.tapByDesc(label) || UiHelper.tapByDescContains(label)) {
+                ExtentReportManager.logInfo("Tapped calendar day: " + label);
+                return true;
+            }
         }
-        // Disabled dates include ", Disabled date" — never select those
         return false;
     }
 
