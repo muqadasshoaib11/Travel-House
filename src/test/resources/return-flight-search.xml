@@ -4,7 +4,7 @@
         <listener class-name="com.travelhouse.utils.TestListener"/>
     </listeners>
 
-    <!-- CI retrigger: mandatory Installments fare for Cheapest + Fastest -->
+    <!-- CI retrigger: 2026-08-07 15:37:03 -->
     <test name="Return Search Cheapest Fastest Installments Fare">
         <classes>
             <class name="com.travelhouse.tests.ReturnFlightSearchSuiteTest"/>
