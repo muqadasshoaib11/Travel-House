@@ -4,7 +4,7 @@
         <listener class-name="com.travelhouse.utils.TestListener"/>
     </listeners>
 
-    <!-- CI retrigger: 2026-08-07 15:37:03 -->
+    <!-- CI retrigger: 2026-08-08 01:25:42 -->
     <test name="Return Search Cheapest Fastest Installments Fare">
         <classes>
             <class name="com.travelhouse.tests.ReturnFlightSearchSuiteTest"/>
