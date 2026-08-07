@@ -1,6 +1,7 @@
 package com.travelhouse.pages;
 
 import com.travelhouse.base.DriverManager;
+import com.travelhouse.utils.ExtentReportManager;
 import com.travelhouse.utils.GestureUtil;
 import com.travelhouse.utils.UiHelper;
 import io.appium.java_client.AppiumBy;
@@ -157,6 +158,39 @@ public class SearchResultsPage {
         Assert.assertTrue(hasResults(), "Results should remain visible after selecting Fastest");
     }
 
+    /** Taps the Nth visible "Pay in Installment" CTA on search results. */
+    public void selectPayInInstallmentAtIndex(int index) {
+        scrollResultsToTop();
+        pause(800);
+        for (int swipe = 0; swipe < index; swipe++) {
+            GestureUtil.swipeUp();
+            pause(700);
+        }
+        List<WebElement> buttons = driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Pay in Installment\")"));
+        if (buttons.isEmpty()) {
+            buttons = driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionContains(\"Pay in Instalment\")"));
+        }
+        Assert.assertFalse(buttons.isEmpty(),
+                "Pay in Installment not found — departure must be ~2 months ahead");
+        WebElement target = buttons.get(Math.min(index % buttons.size(), buttons.size() - 1));
+        Rectangle rect = target.getRect();
+        try {
+            target.click();
+        } catch (Exception ignored) {
+            adbTap(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        }
+        Assert.assertTrue(waitUntilLeftResults(12),
+                "Flight details should open after Pay in Installment index " + index);
+        ExtentReportManager.logInfo("Selected Pay in Installment on card index " + index);
+    }
+
+    public boolean isPayInInstallmentVisible() {
+        return UiHelper.waitForDescContains("Pay in Installment", 3)
+                || UiHelper.waitForDescContains("Pay in Instalment", 2);
+    }
+
     /** Selects the Pay button at the given index (0-based) among visible priced flights. */
     public void selectPayAtIndex(int index) {
         scrollResultsToTop();
@@ -170,7 +204,9 @@ public class SearchResultsPage {
         List<WebElement> usable = new ArrayList<>();
         for (WebElement el : payButtons) {
             String desc = safeDesc(el);
-            if (desc.toLowerCase().contains("proceed")) {
+            String lower = desc.toLowerCase();
+            if (lower.contains("proceed") || lower.contains("pay in installment")
+                    || lower.contains("pay in instalment")) {
                 continue;
             }
             if (desc.contains("Pay") || desc.contains("£")) {
@@ -218,6 +254,11 @@ public class SearchResultsPage {
         if (lower.contains("search flight") || (lower.contains("passenger") && lower.contains("economy"))) {
             return;
         }
+        // Skip short Pay CTAs that are not full itinerary rows
+        if ((lower.equals("pay in installment") || lower.startsWith("pay £") || lower.matches("pay\\s*£?\\d.*"))
+                && !lower.contains("departure") && !lower.contains("london")) {
+            return;
+        }
         List<String> missing = new ArrayList<>();
 
         boolean hasRoute = lower.contains("departure")
@@ -261,8 +302,16 @@ public class SearchResultsPage {
      * Prefer priced flight rows. Do NOT match bare "Departure" — that hits the Home date field.
      */
     private List<WebElement> findResultCards() {
+        // Prefer full itinerary rows (Departure\nLondon\n...) over tiny Pay buttons
         List<WebElement> cards = driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Departure\").descriptionContains(\"Pay\")"));
+        cards = filterOutHomeNodes(cards);
+        if (!cards.isEmpty()) {
+            return cards;
+        }
+        cards = driver.findElements(AppiumBy.androidUIAutomator(
                 "new UiSelector().descriptionContains(\"Pay\")"));
+        cards = filterOutNonFlightPayNodes(cards);
         if (!cards.isEmpty()) {
             return cards;
         }
@@ -271,13 +320,28 @@ public class SearchResultsPage {
         if (!cards.isEmpty()) {
             return cards;
         }
-        // Flight rows often embed duration like "7h 30m" with airport codes
         cards = driver.findElements(AppiumBy.androidUIAutomator(
                 "new UiSelector().descriptionContains(\"h \").descriptionContains(\"m\")"));
         if (!cards.isEmpty()) {
             return filterOutHomeNodes(cards);
         }
         return Collections.emptyList();
+    }
+
+    private List<WebElement> filterOutNonFlightPayNodes(List<WebElement> candidates) {
+        List<WebElement> filtered = new ArrayList<>();
+        for (WebElement el : candidates) {
+            String desc = safeDesc(el).toLowerCase();
+            if (desc.contains("pay in installment") || desc.contains("pay in instalment")
+                    || desc.contains("proceed")) {
+                continue;
+            }
+            if (desc.contains("search flight") || desc.contains("flying from") || desc.contains("going to")) {
+                continue;
+            }
+            filtered.add(el);
+        }
+        return filtered;
     }
 
     private List<WebElement> filterOutHomeNodes(List<WebElement> candidates) {

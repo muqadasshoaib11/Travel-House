@@ -145,18 +145,20 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
     }
 
     /**
-     * Tries several flight cards until the Full Payment / Installments fare screen appears,
-     * then selects Installments. Does not soft-skip the Installments case.
+     * Tries several flight cards via "Pay in Installment" (visible when departure is ~2 months ahead).
      */
     private void selectFlightAndChooseInstallments(String filterLabel) {
         SearchResultsPage results = new SearchResultsPage();
         FareSelectionPage fare = new FareSelectionPage();
         PriceSummaryPage summary = new PriceSummaryPage();
 
-        final int maxAttempts = 8;
+        Assert.assertTrue(results.isPayInInstallmentVisible()
+                        || UiHelper.waitForDescContains("Pay in Installment", 5),
+                "Pay in Installment must appear on results (set departure ~2 months ahead)");
+
+        final int maxAttempts = 5;
         for (int i = 0; i < maxAttempts; i++) {
-            ExtentReportManager.logInfo(filterLabel + ": trying flight card #" + (i + 1)
-                    + " for Installments fare options");
+            ExtentReportManager.logInfo(filterLabel + ": Pay in Installment on card #" + (i + 1));
             if (!results.isResultsScreen()) {
                 navigateBackToResults();
             }
@@ -166,47 +168,42 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
             } else {
                 results.applyCheapestFilter();
             }
-            results.selectPayAtIndex(i);
+
+            Assert.assertTrue(results.isPayInInstallmentVisible(),
+                    "Pay in Installment should remain visible after " + filterLabel + " filter");
+            results.selectPayInInstallmentAtIndex(i);
             pause(2500);
             PermissionDialog.dismissAll(2);
 
-            if (fare.waitUntilDisplayed(12)) {
-                fare.assertBothFareOptionsVisible();
-                ExtentReportManager.logInfo("Fare screen found on card #" + (i + 1)
-                        + " — selecting Installments");
-                fare.selectInstallments();
-                pause(1500);
-                ExtentReportManager.logInfo("Installments fare selected");
-                fare.continueIfPresent();
-                pause(2000);
-                if (summary.hasProceedWithPayment()) {
-                    summary.proceedWithPayment();
-                    pause(2500);
+            // Optional branded fare sheet — if shown, keep Installments selected
+            if (fare.waitUntilDisplayed(8)) {
+                ExtentReportManager.logInfo("Fare sheet shown after Pay in Installment — confirming Installments");
+                if (fare.isInstallmentsVisible()) {
+                    fare.selectInstallments();
                 }
-                Assert.assertTrue(
-                        summary.isDisplayed() || summary.hasTotalPrice() || summary.hasProceedWithPayment()
-                                || UiHelper.waitForDescContains("My Travellers", 2)
-                                || UiHelper.waitForDescContains("Terms", 2)
-                                || UiHelper.waitForDescContains("Installment", 2),
-                        "Expected next booking step after Installments selection");
-                return;
+                fare.continueIfPresent();
+                pause(1500);
             }
 
-            ExtentReportManager.logInfo("Card #" + (i + 1)
-                    + " had no Full Payment/Installments screen — trying next flight");
-            // Back to results for next attempt
-            try {
-                DriverManager.getDriver().navigate().back();
-            } catch (Exception ignored) {
-                adbKeyEvent(4);
+            if (summary.hasProceedWithPayment()) {
+                Assert.assertFalse(summary.getDisplayedTextsSnapshot().isEmpty(),
+                        "Price / itinerary content should be visible");
+                summary.proceedWithPayment();
+                pause(2500);
             }
-            pause(1200);
-            PermissionDialog.dismissAll(1);
+
+            Assert.assertTrue(
+                    summary.isDisplayed() || summary.hasTotalPrice() || summary.hasProceedWithPayment()
+                            || UiHelper.waitForDescContains("My Travellers", 2)
+                            || UiHelper.waitForDescContains("Terms", 2)
+                            || UiHelper.waitForDescContains("Installment", 2),
+                    "Expected next booking step after Pay in Installment");
+            ExtentReportManager.logInfo(filterLabel + " + Installments path completed via Pay in Installment");
+            return;
         }
 
-        Assert.fail("Installments fare options (Full Payment / Installments) were not offered "
-                + "on the first " + maxAttempts + " " + filterLabel
-                + " flights — Installments case cannot be completed for this inventory");
+        Assert.fail("Could not complete Installments via Pay in Installment after "
+                + maxAttempts + " " + filterLabel + " attempts");
     }
 
     /** full | installment — set per branch in config.properties */
