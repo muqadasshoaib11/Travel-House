@@ -93,10 +93,20 @@ public class InstallmentPlansPage {
         Assert.assertNotNull(planLabel, "planLabel");
         Assert.assertFalse(planLabel.isBlank(), "planLabel blank");
 
-        for (int attempt = 0; attempt < 6; attempt++) {
-            if (UiHelper.tapByDesc(planLabel) || UiHelper.tapByDescContains(planLabel)
-                    || UiHelper.tapByTextContains(planLabel)) {
-                ExtentReportManager.logInfo("Selected installment plan: " + planLabel);
+        List<String> candidates = planTapCandidates(planLabel);
+        for (int attempt = 0; attempt < 8; attempt++) {
+            for (String candidate : candidates) {
+                if (UiHelper.tapByDesc(candidate) || UiHelper.tapByDescContains(candidate)
+                        || UiHelper.tapByTextContains(candidate)) {
+                    ExtentReportManager.logInfo("Selected installment plan via: " + candidate
+                            + " (from " + planLabel + ")");
+                    pause(1500);
+                    continueIfPresent();
+                    return;
+                }
+            }
+            // Try clicking live nodes that fuzzy-match the plan
+            if (tapMatchingPlanNode(planLabel)) {
                 pause(1500);
                 continueIfPresent();
                 return;
@@ -104,7 +114,65 @@ public class InstallmentPlansPage {
             GestureUtil.swipeUp();
             pause(700);
         }
-        throw new IllegalStateException("Could not select installment plan: " + planLabel);
+        throw new IllegalStateException("Could not select installment plan: " + planLabel
+                + " (tried " + candidates + ")");
+    }
+
+    private List<String> planTapCandidates(String planLabel) {
+        LinkedHashSet<String> out = new LinkedHashSet<>();
+        String normalized = planLabel.replace('\u00a3', '£').replace("A£", "£").replace("Â£", "£").trim();
+        out.add(normalized);
+        out.add(planLabel);
+        // Shorter stable fragments (avoid full price string encoding issues)
+        java.util.regex.Matcher month = java.util.regex.Pattern
+                .compile("(?i)(\\d+\\s*months?)").matcher(normalized);
+        if (month.find()) {
+            out.add(month.group(1));
+        }
+        java.util.regex.Matcher amount = java.util.regex.Pattern
+                .compile("(\\d+\\.\\d{2})").matcher(normalized);
+        if (amount.find()) {
+            out.add(amount.group(1) + "/month");
+            out.add(amount.group(1));
+        }
+        if (normalized.toLowerCase(Locale.ENGLISH).contains("from")) {
+            int idx = normalized.toLowerCase(Locale.ENGLISH).indexOf("from");
+            if (idx > 0) {
+                out.add(normalized.substring(0, idx).trim());
+            }
+        }
+        return new ArrayList<>(out);
+    }
+
+    private boolean tapMatchingPlanNode(String planLabel) {
+        String needle = planLabel.toLowerCase(Locale.ENGLISH)
+                .replace('\u00a3', '£').replace("a£", "£").replace("â£", "£");
+        java.util.regex.Matcher month = java.util.regex.Pattern.compile("(\\d+)\\s*month").matcher(needle);
+        String monthToken = month.find() ? month.group(1) + " month" : null;
+        try {
+            for (WebElement el : driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().clickable(true)"))) {
+                String desc = safeDesc(el).toLowerCase(Locale.ENGLISH)
+                        .replace('\u00a3', '£').replace("a£", "£");
+                if (!looksLikePlan(desc)) {
+                    continue;
+                }
+                boolean match = desc.contains(needle)
+                        || (monthToken != null && desc.contains(monthToken));
+                java.util.regex.Matcher amt = java.util.regex.Pattern.compile("(\\d+\\.\\d{2})").matcher(needle);
+                if (!match && amt.find() && desc.contains(amt.group(1))) {
+                    match = true;
+                }
+                if (match) {
+                    el.click();
+                    ExtentReportManager.logInfo("Selected installment plan node: " + safeDesc(el));
+                    return true;
+                }
+            }
+        } catch (Exception e) {
+            ExtentReportManager.logInfo("Plan node tap note: " + e.getMessage());
+        }
+        return false;
     }
 
     public void continueIfPresent() {
