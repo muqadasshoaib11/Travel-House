@@ -1,12 +1,12 @@
 <!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
-<suite name="Travel House Login And Flight Search" verbose="1" parallel="false">
+<suite name="Travel House Dual Route Booking" verbose="1" parallel="false">
     <listeners>
         <listener class-name="com.travelhouse.utils.TestListener"/>
     </listeners>
 
-    <test name="Login And Flight Search">
+    <test name="Login Home Return Jeddah And OneWay Karachi Booking">
         <classes>
-            <class name="com.travelhouse.tests.LoginAndFlightSearchTest"/>
+            <class name="com.travelhouse.tests.DualRouteBookingSuiteTest"/>
         </classes>
     </test>
 </suite>
