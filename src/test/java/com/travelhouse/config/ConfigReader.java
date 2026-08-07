@@ -48,6 +48,7 @@ public final class ConfigReader {
         applyOverride("appium.server.url", "APPIUM_SERVER_URL");
         applyOverride("app.package", "APP_PACKAGE");
         applyOverride("app.activity", "APP_ACTIVITY");
+        applyOverride("fare.selection.mode", "FARE_SELECTION_MODE");
     }
 
     private static void applyOverride(String propertyKey, String envKey) {

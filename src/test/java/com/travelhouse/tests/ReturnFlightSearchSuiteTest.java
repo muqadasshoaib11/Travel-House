@@ -2,6 +2,7 @@ package com.travelhouse.tests;
 
 import com.travelhouse.base.DriverManager;
 import com.travelhouse.base.JourneyBaseTest;
+import com.travelhouse.config.ConfigReader;
 import com.travelhouse.config.Credentials;
 import com.travelhouse.config.TestDataReader;
 import com.travelhouse.pages.AirportPickerPage;
@@ -20,10 +21,14 @@ import org.testng.SkipException;
 import org.testng.annotations.Test;
 
 /**
- * Return flight search CI suite:
+ * Return flight search CI suite (fare mode from config {@code fare.selection.mode}):
  * Login → Return search → validate listings →
- * Cheapest + Full Payment → back →
- * Fastest + Installments.
+ * Cheapest + configured fare → back →
+ * Fastest + configured fare.
+ *
+ * Branches:
+ * - feature/return-search-full-payment → full
+ * - feature/return-search-installments → installment
  */
 public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
 
@@ -32,6 +37,8 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
         if (!Credentials.isConfigured()) {
             throw new SkipException("Configure login.email / login.password in config.properties");
         }
+
+        ExtentReportManager.logInfo("Fare mode for this suite: " + fareModeLabel());
 
         HomePage home = new HomePage();
         home.waitForUiReady();
@@ -93,8 +100,8 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
     }
 
     @Test(priority = 3, timeOut = 600_000, dependsOnMethods = "step02_returnSearch_validateResults",
-            description = "Select Cheapest flight and choose Full Payment fare")
-    public void step03_cheapest_fullPayment() {
+            description = "Select Cheapest flight and choose configured fare")
+    public void step03_cheapest_configuredFare() {
         SearchResultsPage results = new SearchResultsPage();
         Assert.assertTrue(results.isResultsScreen(), "Should still be on search results");
 
@@ -106,12 +113,12 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
         pause(3000);
         PermissionDialog.dismissAll(2);
 
-        chooseFareAndConfirm("full");
-        ExtentReportManager.logInfo("Cheapest + Full Payment path completed");
+        chooseFareAndConfirm(fareMode());
+        ExtentReportManager.logInfo("Cheapest + " + fareModeLabel() + " path completed");
     }
 
-    @Test(priority = 4, timeOut = 300_000, dependsOnMethods = "step03_cheapest_fullPayment",
-            description = "Return to search results after Full Payment path")
+    @Test(priority = 4, timeOut = 300_000, dependsOnMethods = "step03_cheapest_configuredFare",
+            description = "Return to search results after first fare path")
     public void step04_backToResults() {
         navigateBackToResults();
         SearchResultsPage results = new SearchResultsPage();
@@ -120,8 +127,8 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
     }
 
     @Test(priority = 5, timeOut = 600_000, dependsOnMethods = "step04_backToResults",
-            description = "Select Fastest flight and choose Installments fare")
-    public void step05_fastest_installments() {
+            description = "Select Fastest flight and choose configured fare")
+    public void step05_fastest_configuredFare() {
         SearchResultsPage results = new SearchResultsPage();
         results.scrollResultsToTop();
         results.applyFastestFilter();
@@ -131,8 +138,21 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
         pause(3000);
         PermissionDialog.dismissAll(2);
 
-        chooseFareAndConfirm("installment");
-        ExtentReportManager.logInfo("Fastest + Installments path completed");
+        chooseFareAndConfirm(fareMode());
+        ExtentReportManager.logInfo("Fastest + " + fareModeLabel() + " path completed");
+    }
+
+    /** full | installment — set per branch in config.properties */
+    private static String fareMode() {
+        return ConfigReader.get("fare.selection.mode", "full").trim().toLowerCase();
+    }
+
+    private static String fareModeLabel() {
+        return useInstallments() ? "Installments" : "Full Payment";
+    }
+
+    private static boolean useInstallments() {
+        return fareMode().contains("install");
     }
 
     private void chooseFareAndConfirm(String fareType) {
@@ -277,7 +297,7 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
 
     private static void adbKeyEvent(int keyCode) {
         try {
-            String udid = com.travelhouse.config.ConfigReader.get("device.udid");
+            String udid = ConfigReader.get("device.udid");
             ProcessBuilder pb = (udid == null || udid.isBlank())
                     ? new ProcessBuilder("adb", "shell", "input", "keyevent", String.valueOf(keyCode))
                     : new ProcessBuilder("adb", "-s", udid, "shell", "input", "keyevent",

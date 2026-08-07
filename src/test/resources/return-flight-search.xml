@@ -4,7 +4,7 @@
         <listener class-name="com.travelhouse.utils.TestListener"/>
     </listeners>
 
-    <test name="Return Search Results Cheapest Fastest Fare Paths">
+    <test name="Return Search Cheapest Fastest Configured Fare">
         <classes>
             <class name="com.travelhouse.tests.ReturnFlightSearchSuiteTest"/>
         </classes>

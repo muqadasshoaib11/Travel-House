@@ -1,5 +1,9 @@
 # Travel House Appium CI/CD — self-hosted Windows runner + USB phone
 # Secrets: LOGIN_EMAIL, LOGIN_PASSWORD, DEVICE_UDID (optional)
+#
+# Flow branches (push runs return-search automatically):
+#   feature/return-search-full-payment  → fare.selection.mode=full
+#   feature/return-search-installments  → fare.selection.mode=installment
 
 name: Android Appium CI/CD
 
@@ -9,7 +13,7 @@ on:
       suite:
         description: "TestNG suite to run"
         required: true
-        default: ci-health
+        default: return-search
         type: choice
         options:
           - ci-health
@@ -24,7 +28,12 @@ on:
         type: boolean
 
   push:
-    branches: [main, master, feature/login-flight-search]
+    branches:
+      - main
+      - master
+      - feature/login-flight-search
+      - feature/return-search-full-payment
+      - feature/return-search-installments
     paths:
       - "src/test/**"
       - "pom.xml"
@@ -45,7 +54,7 @@ concurrency:
 
 jobs:
   appium:
-    name: Appium (${{ github.event.inputs.suite || 'ci-health' }})
+    name: Appium (${{ github.event.inputs.suite || github.ref_name }})
     runs-on: self-hosted
     timeout-minutes: 120
 
@@ -104,10 +113,15 @@ jobs:
           SUITE_INPUT: ${{ github.event.inputs.suite }}
           SKIP_APPIUM: ${{ github.event.inputs.skip_appium_start }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
+          BRANCH_NAME: ${{ github.ref_name }}
         run: |
           $choice = $env:SUITE_INPUT
+          $branch = $env:BRANCH_NAME
           if ([string]::IsNullOrWhiteSpace($choice)) {
-            if ($env:COMMIT_MSG -match '\[return-search\]') { $choice = "return-search" }
+            if ($branch -match 'return-search-full-payment|return-search-installments') {
+              $choice = "return-search"
+            }
+            elseif ($env:COMMIT_MSG -match '\[return-search\]') { $choice = "return-search" }
             elseif ($env:COMMIT_MSG -match '\[dual-route\]') { $choice = "dual-route" }
             else { $choice = "ci-health" }
           }
@@ -118,7 +132,7 @@ jobs:
             "return-search"   { $xml = "src\test\resources\return-flight-search.xml" }
             default           { $xml = "src\test\resources\ci-health.xml"; $choice = "ci-health" }
           }
-          Write-Host "Running suite=$choice xml=$xml"
+          Write-Host "Running suite=$choice xml=$xml branch=$branch"
           if (-not (Test-Path $xml)) { throw "Suite XML not found: $xml" }
           $args = @{ SuiteXml = $xml }
           if ($env:SKIP_APPIUM -eq "true") { $args.SkipAppiumStart = $true }
