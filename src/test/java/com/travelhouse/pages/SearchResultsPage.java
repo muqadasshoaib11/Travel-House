@@ -145,13 +145,30 @@ public class SearchResultsPage {
         }
     }
 
-    public void selectCheapest() {
+    /** Applies Cheapest sort without selecting a flight. */
+    public void applyCheapestFilter() {
         tapFilter("Cheapest");
+        Assert.assertTrue(hasResults(), "Results should remain visible after selecting Cheapest");
+    }
+
+    /** Applies Fastest sort without selecting a flight. */
+    public void applyFastestFilter() {
+        tapFilter("Fastest");
+        Assert.assertTrue(hasResults(), "Results should remain visible after selecting Fastest");
+    }
+
+    /** Selects the first visible priced flight (Pay). */
+    public void selectFirstFlight() {
+        selectFirstResultCard();
+    }
+
+    public void selectCheapest() {
+        applyCheapestFilter();
         selectFirstResultCard();
     }
 
     public void selectFastest() {
-        tapFilter("Fastest");
+        applyFastestFilter();
         selectFirstResultCard();
     }
 

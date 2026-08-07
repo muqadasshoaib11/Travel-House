@@ -13,6 +13,7 @@ on:
         type: choice
         options:
           - ci-health
+          - return-search
           - dual-route
           - smoke
           - regression
@@ -104,12 +105,20 @@ jobs:
           SKIP_APPIUM: ${{ github.event.inputs.skip_appium_start }}
         run: |
           $choice = $env:SUITE_INPUT
-          if ([string]::IsNullOrWhiteSpace($choice)) { $choice = "ci-health" }
+          if ([string]::IsNullOrWhiteSpace($choice)) {
+            $msg = @"
+${{ github.event.head_commit.message }}
+"@
+            if ($msg -match '\[return-search\]') { $choice = "return-search" }
+            elseif ($msg -match '\[dual-route\]') { $choice = "dual-route" }
+            else { $choice = "ci-health" }
+          }
           switch ($choice) {
-            "smoke"      { $xml = "src\test\resources\smoke.xml" }
-            "regression" { $xml = "src\test\resources\regression.xml" }
-            "dual-route" { $xml = "src\test\resources\dual-route-booking.xml" }
-            default      { $xml = "src\test\resources\ci-health.xml"; $choice = "ci-health" }
+            "smoke"           { $xml = "src\test\resources\smoke.xml" }
+            "regression"      { $xml = "src\test\resources\regression.xml" }
+            "dual-route"      { $xml = "src\test\resources\dual-route-booking.xml" }
+            "return-search"   { $xml = "src\test\resources\return-flight-search.xml" }
+            default           { $xml = "src\test\resources\ci-health.xml"; $choice = "ci-health" }
           }
           Write-Host "Running suite=$choice xml=$xml"
           if (-not (Test-Path $xml)) { throw "Suite XML not found: $xml" }

@@ -51,11 +51,58 @@ public final class DevicePrep {
             apkInstalledThisRun = true;
         }
 
+        logInstalledAppVersion(adbPrefix);
+
         try {
             TimeUnit.SECONDS.sleep(2);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
+    }
+
+    /** Prints the on-device app version so CI/local logs show which build under test. */
+    private static void logInstalledAppVersion(String[] adbPrefix) {
+        String pkg = ConfigReader.get("app.package", "com.travelhouse.uk.app");
+        List<String> command = new ArrayList<>();
+        for (String part : adbPrefix) {
+            command.add(part);
+        }
+        command.add("shell");
+        command.add("dumpsys");
+        command.add("package");
+        command.add(pkg);
+        CommandResult result = run(command.toArray(new String[0]), 20);
+        String versionName = firstMatch(result.output, "versionName=");
+        String versionCode = firstMatch(result.output, "versionCode=");
+        String expectedName = ConfigReader.get("app.version.name");
+        String expectedCode = ConfigReader.get("app.version.code");
+        System.out.println("[APP] Installed " + pkg
+                + " versionName=" + (versionName.isBlank() ? "?" : versionName)
+                + " versionCode=" + (versionCode.isBlank() ? "?" : versionCode.split("\\s+")[0]));
+        if (!expectedName.isBlank() && !versionName.isBlank() && !expectedName.equals(versionName)) {
+            System.out.println("[APP] WARNING: expected versionName=" + expectedName
+                    + " but device has " + versionName);
+        }
+        if (!expectedCode.isBlank() && !versionCode.isBlank()) {
+            String codeOnly = versionCode.split("\\s+")[0];
+            if (!expectedCode.equals(codeOnly)) {
+                System.out.println("[APP] WARNING: expected versionCode=" + expectedCode
+                        + " but device has " + codeOnly);
+            }
+        }
+    }
+
+    private static String firstMatch(String text, String prefix) {
+        if (text == null || text.isBlank()) {
+            return "";
+        }
+        for (String line : text.split("\\R")) {
+            String trimmed = line.trim();
+            if (trimmed.startsWith(prefix)) {
+                return trimmed.substring(prefix.length()).trim();
+            }
+        }
+        return "";
     }
 
     /**

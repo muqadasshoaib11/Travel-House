@@ -1,0 +1,12 @@
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<suite name="Travel House Return Flight Search" verbose="1" parallel="false">
+    <listeners>
+        <listener class-name="com.travelhouse.utils.TestListener"/>
+    </listeners>
+
+    <test name="Return Search Results Cheapest Fastest Fare Paths">
+        <classes>
+            <class name="com.travelhouse.tests.ReturnFlightSearchSuiteTest"/>
+        </classes>
+    </test>
+</suite>

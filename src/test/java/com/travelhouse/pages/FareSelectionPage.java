@@ -21,6 +21,33 @@ public class FareSelectionPage {
                 AppiumBy.androidUIAutomator("new UiSelector().textContains(\"Installment\")"));
     }
 
+    public boolean isFullPaymentVisible() {
+        return UiHelper.waitForDescContains("Full Payment", 3)
+                || UiHelper.isAnyDisplayed(
+                AppiumBy.androidUIAutomator("new UiSelector().textContains(\"Full Payment\")"));
+    }
+
+    public boolean isInstallmentsVisible() {
+        return UiHelper.waitForDescContains("Installment", 3)
+                || UiHelper.waitForDescContains("Instalment", 2)
+                || UiHelper.isAnyDisplayed(
+                AppiumBy.androidUIAutomator("new UiSelector().textContains(\"Installment\")"),
+                AppiumBy.androidUIAutomator("new UiSelector().textContains(\"Instalment\")"));
+    }
+
+    /** Asserts both Full Payment and Installments are offered when the fare screen appears. */
+    public void assertBothFareOptionsVisible() {
+        if (!isDisplayed()) {
+            throw new IllegalStateException("Fare selection screen is not displayed");
+        }
+        if (!isFullPaymentVisible()) {
+            throw new IllegalStateException("Full Payment option not visible on fare screen");
+        }
+        if (!isInstallmentsVisible()) {
+            throw new IllegalStateException("Installments option not visible on fare screen");
+        }
+    }
+
     public void selectFullPayment() {
         if (!UiHelper.tapByDescContains("Full Payment") && !UiHelper.tapByTextContains("Full Payment")) {
             throw new IllegalStateException("Full Payment option not found");

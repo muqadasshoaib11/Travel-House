@@ -58,12 +58,25 @@ if (-not $SkipAppiumStart) {
         Write-Host "[CI] Appium already running on :$AppiumPort" -ForegroundColor Green
     } else {
         Write-Host "[CI] Starting Appium on :$AppiumPort ..." -ForegroundColor Yellow
-        $appiumCmd = (Get-Command appium -ErrorAction SilentlyContinue)
-        if (-not $appiumCmd) {
-            Write-Host "[CI] FAIL: 'appium' not found on PATH" -ForegroundColor Red
+        # Prefer appium.cmd — Get-Command often resolves to appium.ps1, and Start-Process
+        # on that shim does not keep a listening Appium server (CI then times out).
+        $appiumExe = $null
+        foreach ($candidate in @(
+            (Get-Command "appium.cmd" -ErrorAction SilentlyContinue),
+            (Get-Command "appium" -ErrorAction SilentlyContinue)
+        )) {
+            if (-not $candidate) { continue }
+            $src = [string]$candidate.Source
+            if ($src -match '\.cmd$') { $appiumExe = $src; break }
+            $cmdSibling = [IO.Path]::ChangeExtension($src, ".cmd")
+            if (Test-Path $cmdSibling) { $appiumExe = $cmdSibling; break }
+        }
+        if (-not $appiumExe) {
+            Write-Host "[CI] FAIL: 'appium.cmd' not found on PATH" -ForegroundColor Red
             exit 1
         }
-        $appiumProc = Start-Process -FilePath $appiumCmd.Source -ArgumentList @("--port", "$AppiumPort") -PassThru -WindowStyle Hidden
+        Write-Host "[CI] Appium launcher: $appiumExe"
+        $appiumProc = Start-Process -FilePath $appiumExe -ArgumentList @("--port", "$AppiumPort") -PassThru -WindowStyle Hidden
         $ready = $false
         for ($i = 0; $i -lt 30; $i++) {
             Start-Sleep -Seconds 2
