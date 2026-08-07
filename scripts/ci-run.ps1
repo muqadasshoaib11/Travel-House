@@ -107,3 +107,5 @@ if ($appiumProc -and -not $appiumProc.HasExited) {
 exit $exitCode
 
 # Runner must be interactive (not Windows service) for USB device access. Last CI nudge: 2026-07-31 02:14:43
+
+# CI retrigger 2026-08-07 12:12:03
