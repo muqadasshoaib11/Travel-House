@@ -103,14 +103,12 @@ jobs:
           APPIUM_SERVER_URL: ${{ secrets.APPIUM_SERVER_URL }}
           SUITE_INPUT: ${{ github.event.inputs.suite }}
           SKIP_APPIUM: ${{ github.event.inputs.skip_appium_start }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
           $choice = $env:SUITE_INPUT
           if ([string]::IsNullOrWhiteSpace($choice)) {
-            $msg = @"
-${{ github.event.head_commit.message }}
-"@
-            if ($msg -match '\[return-search\]') { $choice = "return-search" }
-            elseif ($msg -match '\[dual-route\]') { $choice = "dual-route" }
+            if ($env:COMMIT_MSG -match '\[return-search\]') { $choice = "return-search" }
+            elseif ($env:COMMIT_MSG -match '\[dual-route\]') { $choice = "dual-route" }
             else { $choice = "ci-health" }
           }
           switch ($choice) {
