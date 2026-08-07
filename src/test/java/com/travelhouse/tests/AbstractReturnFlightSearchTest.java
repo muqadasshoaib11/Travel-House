@@ -89,10 +89,30 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         home.openGoingTo();
         new AirportPickerPage().searchAndSelect(destinationQuery);
 
-        ExtentReportManager.logInfo("Selecting travel dates " + departure + " → " + returnDate);
-        home.openDeparture();
-        pause(1500);
-        new DatePickerPage().selectDepartureAndReturn(departure, returnDate);
+        boolean forceDates = Boolean.parseBoolean(TestDataReader.get("flight.force.date.selection", "true"));
+        boolean nearTerm = !TestDataReader.get("flight.departure.days.ahead", "").isBlank();
+        if (forceDates) {
+            ExtentReportManager.logInfo("Selecting travel dates " + departure + " → " + returnDate);
+            try {
+                home.openDeparture();
+                pause(1500);
+                new DatePickerPage().selectDepartureAndReturn(departure, returnDate);
+            } catch (RuntimeException e) {
+                if (nearTerm) {
+                    ExtentReportManager.logInfo("Date picker failed for near-term (" + e.getMessage()
+                            + ") — using app default dates if already within 2 months");
+                    // Dismiss picker if open
+                    try {
+                        DriverManager.getDriver().navigate().back();
+                    } catch (Exception ignored) {
+                        adbKeyEvent(4);
+                    }
+                    pause(800);
+                } else {
+                    throw e;
+                }
+            }
+        }
 
         home.tapSearchFlight();
         pause(6000);

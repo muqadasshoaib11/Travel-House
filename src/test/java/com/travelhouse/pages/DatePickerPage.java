@@ -79,6 +79,27 @@ public class DatePickerPage {
                 return;
             }
         }
+        if (tryTapDay(day)) {
+            return;
+        }
+        // Log what the calendar actually exposes to aid matching
+        try {
+            String src = UiHelper.getPageSourceSafe();
+            if (src != null) {
+                java.util.regex.Matcher m = java.util.regex.Pattern
+                        .compile("content-desc=\"([^\"]*(?:January|February|March|April|May|June|July|August|September|October|November|December)[^\"]*)\"")
+                        .matcher(src);
+                int n = 0;
+                StringBuilder sb = new StringBuilder("Visible calendar labels: ");
+                while (m.find() && n < 25) {
+                    sb.append(m.group(1).replace("&#10;", " | ")).append(" || ");
+                    n++;
+                }
+                ExtentReportManager.logInfo(sb.toString());
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
         throw new IllegalStateException("Calendar day not found: " + CELL_PADDED.format(day));
     }
 
