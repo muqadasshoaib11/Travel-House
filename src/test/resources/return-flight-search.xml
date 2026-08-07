@@ -4,10 +4,10 @@
         <listener class-name="com.travelhouse.utils.TestListener"/>
     </listeners>
 
-    <!-- CI retrigger: 2026-08-08 01:25:42 -->
-    <test name="Return Search Cheapest Fastest Installments Fare">
+    <!-- Scenario B: far-out dates, all installment plans × Cheapest/Fastest -->
+    <test name="Return Search Installments All Plans">
         <classes>
-            <class name="com.travelhouse.tests.ReturnFlightSearchSuiteTest"/>
+            <class name="com.travelhouse.tests.ReturnFlightInstallmentsSuiteTest"/>
         </classes>
     </test>
 </suite>
