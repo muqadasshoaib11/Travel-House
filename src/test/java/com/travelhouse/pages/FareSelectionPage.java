@@ -21,6 +21,23 @@ public class FareSelectionPage {
                 AppiumBy.androidUIAutomator("new UiSelector().textContains(\"Installment\")"));
     }
 
+    /** Polls until Full Payment / Installments options appear (Flutter screens can lag). */
+    public boolean waitUntilDisplayed(int timeoutSeconds) {
+        long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
+        while (System.currentTimeMillis() < deadline) {
+            if (isDisplayed()) {
+                return true;
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return isDisplayed();
+            }
+        }
+        return isDisplayed();
+    }
+
     public boolean isFullPaymentVisible() {
         return UiHelper.waitForDescContains("Full Payment", 3)
                 || UiHelper.isAnyDisplayed(

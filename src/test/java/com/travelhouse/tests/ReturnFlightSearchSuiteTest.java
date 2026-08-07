@@ -21,14 +21,12 @@ import org.testng.SkipException;
 import org.testng.annotations.Test;
 
 /**
- * Return flight search CI suite (fare mode from config {@code fare.selection.mode}):
+ * Return flight search CI suite — Installments flow branch:
  * Login → Return search → validate listings →
- * Cheapest + configured fare → back →
- * Fastest + configured fare.
+ * Cheapest + Installments → back →
+ * Fastest + Installments.
  *
- * Branches:
- * - feature/return-search-full-payment → full
- * - feature/return-search-installments → installment
+ * Branch: feature/return-search-installments (fare.selection.mode=installment)
  */
 public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
 
@@ -100,8 +98,11 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
     }
 
     @Test(priority = 3, timeOut = 600_000, dependsOnMethods = "step02_returnSearch_validateResults",
-            description = "Select Cheapest flight and choose configured fare")
-    public void step03_cheapest_configuredFare() {
+            description = "Select Cheapest flight and choose Installments fare")
+    public void step03_cheapest_installments() {
+        Assert.assertTrue(useInstallments(),
+                "This branch must run Installments (fare.selection.mode=installment)");
+
         SearchResultsPage results = new SearchResultsPage();
         Assert.assertTrue(results.isResultsScreen(), "Should still be on search results");
 
@@ -113,12 +114,12 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
         pause(3000);
         PermissionDialog.dismissAll(2);
 
-        chooseFareAndConfirm(fareMode());
-        ExtentReportManager.logInfo("Cheapest + " + fareModeLabel() + " path completed");
+        chooseInstallmentsFareAndConfirm();
+        ExtentReportManager.logInfo("Cheapest + Installments path completed");
     }
 
-    @Test(priority = 4, timeOut = 300_000, dependsOnMethods = "step03_cheapest_configuredFare",
-            description = "Return to search results after first fare path")
+    @Test(priority = 4, timeOut = 300_000, dependsOnMethods = "step03_cheapest_installments",
+            description = "Return to search results after Installments fare path")
     public void step04_backToResults() {
         navigateBackToResults();
         SearchResultsPage results = new SearchResultsPage();
@@ -127,8 +128,11 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
     }
 
     @Test(priority = 5, timeOut = 600_000, dependsOnMethods = "step04_backToResults",
-            description = "Select Fastest flight and choose configured fare")
-    public void step05_fastest_configuredFare() {
+            description = "Select Fastest flight and choose Installments fare")
+    public void step05_fastest_installments() {
+        Assert.assertTrue(useInstallments(),
+                "This branch must run Installments (fare.selection.mode=installment)");
+
         SearchResultsPage results = new SearchResultsPage();
         results.scrollResultsToTop();
         results.applyFastestFilter();
@@ -138,8 +142,8 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
         pause(3000);
         PermissionDialog.dismissAll(2);
 
-        chooseFareAndConfirm(fareMode());
-        ExtentReportManager.logInfo("Fastest + " + fareModeLabel() + " path completed");
+        chooseInstallmentsFareAndConfirm();
+        ExtentReportManager.logInfo("Fastest + Installments path completed");
     }
 
     /** full | installment — set per branch in config.properties */
@@ -155,26 +159,27 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
         return fareMode().contains("install");
     }
 
-    private void chooseFareAndConfirm(String fareType) {
+    /**
+     * Installments must be selected explicitly — do not soft-skip if the fare screen is slow.
+     */
+    private void chooseInstallmentsFareAndConfirm() {
         FareSelectionPage fare = new FareSelectionPage();
         PriceSummaryPage summary = new PriceSummaryPage();
 
-        // Some flights skip fare screen and land on price summary directly
-        if (fare.isDisplayed()) {
-            fare.assertBothFareOptionsVisible();
-            ExtentReportManager.logInfo("Fare screen shows Full Payment and Installments");
-            if (fareType.toLowerCase().contains("install")) {
-                fare.selectInstallments();
-            } else {
-                fare.selectFullPayment();
-            }
-            fare.continueIfPresent();
-            pause(2000);
-        } else {
-            ExtentReportManager.logInfo("Fare screen not shown for this flight — continuing to summary");
-        }
+        Assert.assertTrue(fare.waitUntilDisplayed(45),
+                "Fare selection screen must show Full Payment and Installments — Installments case cannot be skipped");
+        fare.assertBothFareOptionsVisible();
+        ExtentReportManager.logInfo("Fare screen shows Full Payment and Installments — selecting Installments");
 
-        pause(2000);
+        fare.selectInstallments();
+        pause(1500);
+        Assert.assertTrue(fare.isInstallmentsVisible() || summary.isDisplayed() || summary.hasProceedWithPayment(),
+                "Installments should remain selected / advance after tap");
+        ExtentReportManager.logInfo("Installments fare selected");
+
+        fare.continueIfPresent();
+        pause(2500);
+
         if (summary.hasProceedWithPayment()) {
             Assert.assertFalse(summary.getDisplayedTextsSnapshot().isEmpty(),
                     "Outbound / price content should be visible");
@@ -184,11 +189,11 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
 
         Assert.assertTrue(
                 summary.isDisplayed() || summary.hasTotalPrice() || summary.hasProceedWithPayment()
-                        || fare.isDisplayed()
                         || UiHelper.waitForDescContains("My Travellers", 2)
-                        || UiHelper.waitForDescContains("Terms", 2),
-                "Expected price summary / next booking step after fare selection (" + fareType + ")");
-        ExtentReportManager.logInfo("Advanced past fare selection (" + fareType + ")");
+                        || UiHelper.waitForDescContains("Terms", 2)
+                        || UiHelper.waitForDescContains("Installment", 2),
+                "Expected price summary / next booking step after Installments fare selection");
+        ExtentReportManager.logInfo("Advanced past Installments fare selection");
     }
 
     private void performReturnSearch(String origin, String destination, String destinationQuery) {
