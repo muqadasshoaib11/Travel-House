@@ -157,6 +157,38 @@ public class SearchResultsPage {
         Assert.assertTrue(hasResults(), "Results should remain visible after selecting Fastest");
     }
 
+    /** Selects the Pay button at the given index (0-based) among visible priced flights. */
+    public void selectPayAtIndex(int index) {
+        scrollResultsToTop();
+        pause(800);
+        for (int swipe = 0; swipe < index; swipe++) {
+            GestureUtil.swipeUp();
+            pause(700);
+        }
+        List<WebElement> payButtons = driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Pay\")"));
+        List<WebElement> usable = new ArrayList<>();
+        for (WebElement el : payButtons) {
+            String desc = safeDesc(el);
+            if (desc.toLowerCase().contains("proceed")) {
+                continue;
+            }
+            if (desc.contains("Pay") || desc.contains("£")) {
+                usable.add(el);
+            }
+        }
+        Assert.assertFalse(usable.isEmpty(), "No Pay buttons found to select flight index " + index);
+        WebElement target = usable.get(Math.min(index % usable.size(), usable.size() - 1));
+        Rectangle rect = target.getRect();
+        try {
+            target.click();
+        } catch (Exception ignored) {
+            adbTap(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        }
+        Assert.assertTrue(waitUntilLeftResults(12),
+                "Flight details should open after selecting Pay index " + index);
+    }
+
     /** Selects the first visible priced flight (Pay). */
     public void selectFirstFlight() {
         selectFirstResultCard();

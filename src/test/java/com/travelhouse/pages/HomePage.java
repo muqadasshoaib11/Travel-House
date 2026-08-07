@@ -286,6 +286,20 @@ public class HomePage {
     }
 
     public void openDeparture() {
+        // Prefer date field "Departure\n2026-08-09" over bare "Departure" tab inside the picker
+        List<WebElement> candidates = driver.findElements(
+                AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Departure\")"));
+        for (WebElement el : candidates) {
+            try {
+                String desc = el.getAttribute("contentDescription");
+                if (desc != null && desc.contains("\n") && desc.length() > "Departure".length()) {
+                    el.click();
+                    return;
+                }
+            } catch (Exception ignored) {
+                // try next
+            }
+        }
         tapRequired(departure, "Departure");
     }
 

@@ -6,6 +6,7 @@ import com.travelhouse.config.ConfigReader;
 import com.travelhouse.config.Credentials;
 import com.travelhouse.config.TestDataReader;
 import com.travelhouse.pages.AirportPickerPage;
+import com.travelhouse.pages.DatePickerPage;
 import com.travelhouse.pages.FareSelectionPage;
 import com.travelhouse.pages.HomePage;
 import com.travelhouse.pages.LoginPage;
@@ -20,13 +21,16 @@ import org.testng.Assert;
 import org.testng.SkipException;
 import org.testng.annotations.Test;
 
+import java.time.LocalDate;
+
 /**
  * Return flight search CI suite — Installments flow branch:
- * Login → Return search → validate listings →
+ * Login → Return search (departure ~2 months ahead) → validate listings →
  * Cheapest + Installments → back →
  * Fastest + Installments.
  *
  * Branch: feature/return-search-installments (fare.selection.mode=installment)
+ * Note: Installments fare options appear only when departure is ~2 months in advance.
  */
 public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
 
@@ -110,11 +114,8 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
         results.applyCheapestFilter();
         Assert.assertTrue(results.getResultCountEstimate() > 0 || results.hasResults(),
                 "Listings should display after Cheapest filter");
-        results.selectFirstFlight();
-        pause(3000);
-        PermissionDialog.dismissAll(2);
 
-        chooseInstallmentsFareAndConfirm();
+        selectFlightAndChooseInstallments("Cheapest");
         ExtentReportManager.logInfo("Cheapest + Installments path completed");
     }
 
@@ -138,12 +139,74 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
         results.applyFastestFilter();
         Assert.assertTrue(results.getResultCountEstimate() > 0 || results.hasResults(),
                 "Listings should display after Fastest filter");
-        results.selectFirstFlight();
-        pause(3000);
-        PermissionDialog.dismissAll(2);
 
-        chooseInstallmentsFareAndConfirm();
+        selectFlightAndChooseInstallments("Fastest");
         ExtentReportManager.logInfo("Fastest + Installments path completed");
+    }
+
+    /**
+     * Tries several flight cards until the Full Payment / Installments fare screen appears,
+     * then selects Installments. Does not soft-skip the Installments case.
+     */
+    private void selectFlightAndChooseInstallments(String filterLabel) {
+        SearchResultsPage results = new SearchResultsPage();
+        FareSelectionPage fare = new FareSelectionPage();
+        PriceSummaryPage summary = new PriceSummaryPage();
+
+        final int maxAttempts = 8;
+        for (int i = 0; i < maxAttempts; i++) {
+            ExtentReportManager.logInfo(filterLabel + ": trying flight card #" + (i + 1)
+                    + " for Installments fare options");
+            if (!results.isResultsScreen()) {
+                navigateBackToResults();
+            }
+            results.scrollResultsToTop();
+            if (filterLabel.toLowerCase().contains("fast")) {
+                results.applyFastestFilter();
+            } else {
+                results.applyCheapestFilter();
+            }
+            results.selectPayAtIndex(i);
+            pause(2500);
+            PermissionDialog.dismissAll(2);
+
+            if (fare.waitUntilDisplayed(12)) {
+                fare.assertBothFareOptionsVisible();
+                ExtentReportManager.logInfo("Fare screen found on card #" + (i + 1)
+                        + " — selecting Installments");
+                fare.selectInstallments();
+                pause(1500);
+                ExtentReportManager.logInfo("Installments fare selected");
+                fare.continueIfPresent();
+                pause(2000);
+                if (summary.hasProceedWithPayment()) {
+                    summary.proceedWithPayment();
+                    pause(2500);
+                }
+                Assert.assertTrue(
+                        summary.isDisplayed() || summary.hasTotalPrice() || summary.hasProceedWithPayment()
+                                || UiHelper.waitForDescContains("My Travellers", 2)
+                                || UiHelper.waitForDescContains("Terms", 2)
+                                || UiHelper.waitForDescContains("Installment", 2),
+                        "Expected next booking step after Installments selection");
+                return;
+            }
+
+            ExtentReportManager.logInfo("Card #" + (i + 1)
+                    + " had no Full Payment/Installments screen — trying next flight");
+            // Back to results for next attempt
+            try {
+                DriverManager.getDriver().navigate().back();
+            } catch (Exception ignored) {
+                adbKeyEvent(4);
+            }
+            pause(1200);
+            PermissionDialog.dismissAll(1);
+        }
+
+        Assert.fail("Installments fare options (Full Payment / Installments) were not offered "
+                + "on the first " + maxAttempts + " " + filterLabel
+                + " flights — Installments case cannot be completed for this inventory");
     }
 
     /** full | installment — set per branch in config.properties */
@@ -159,43 +222,6 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
         return fareMode().contains("install");
     }
 
-    /**
-     * Installments must be selected explicitly — do not soft-skip if the fare screen is slow.
-     */
-    private void chooseInstallmentsFareAndConfirm() {
-        FareSelectionPage fare = new FareSelectionPage();
-        PriceSummaryPage summary = new PriceSummaryPage();
-
-        Assert.assertTrue(fare.waitUntilDisplayed(45),
-                "Fare selection screen must show Full Payment and Installments — Installments case cannot be skipped");
-        fare.assertBothFareOptionsVisible();
-        ExtentReportManager.logInfo("Fare screen shows Full Payment and Installments — selecting Installments");
-
-        fare.selectInstallments();
-        pause(1500);
-        Assert.assertTrue(fare.isInstallmentsVisible() || summary.isDisplayed() || summary.hasProceedWithPayment(),
-                "Installments should remain selected / advance after tap");
-        ExtentReportManager.logInfo("Installments fare selected");
-
-        fare.continueIfPresent();
-        pause(2500);
-
-        if (summary.hasProceedWithPayment()) {
-            Assert.assertFalse(summary.getDisplayedTextsSnapshot().isEmpty(),
-                    "Outbound / price content should be visible");
-            summary.proceedWithPayment();
-            pause(2500);
-        }
-
-        Assert.assertTrue(
-                summary.isDisplayed() || summary.hasTotalPrice() || summary.hasProceedWithPayment()
-                        || UiHelper.waitForDescContains("My Travellers", 2)
-                        || UiHelper.waitForDescContains("Terms", 2)
-                        || UiHelper.waitForDescContains("Installment", 2),
-                "Expected price summary / next booking step after Installments fare selection");
-        ExtentReportManager.logInfo("Advanced past Installments fare selection");
-    }
-
     private void performReturnSearch(String origin, String destination, String destinationQuery) {
         HomePage home = new HomePage();
         openHomeReady(home);
@@ -204,6 +230,10 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
         ensureOrigin(home, origin);
         home.openGoingTo();
         new AirportPickerPage().searchAndSelect(destinationQuery);
+
+        // Installments are only offered when departure is ~2 months ahead
+        selectInstallmentEligibleDates(home);
+
         home.tapSearchFlight();
         pause(5000);
 
@@ -213,6 +243,20 @@ public class ReturnFlightSearchSuiteTest extends JourneyBaseTest {
             home.tapSearchFlight();
             pause(8000);
         }
+    }
+
+    private void selectInstallmentEligibleDates(HomePage home) {
+        int monthsAhead = Integer.parseInt(TestDataReader.get("flight.departure.months.ahead", "2").trim());
+        int returnDaysAfter = Integer.parseInt(TestDataReader.get("flight.return.days.after.departure", "7").trim());
+        LocalDate departure = LocalDate.now().plusMonths(monthsAhead);
+        LocalDate returnDate = departure.plusDays(returnDaysAfter);
+
+        ExtentReportManager.logInfo("Setting dates for Installments eligibility: departure "
+                + departure + " ( +" + monthsAhead + " months), return " + returnDate);
+
+        home.openDeparture();
+        pause(1500);
+        new DatePickerPage().selectDepartureAndReturn(departure, returnDate);
     }
 
     private void ensureOrigin(HomePage home, String origin) {
