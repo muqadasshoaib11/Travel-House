@@ -237,19 +237,18 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
     protected void selectFullPaymentPathFromResults(String filterLabel) {
         SearchResultsPage results = new SearchResultsPage();
         results.scrollResultsToTop();
-        if (filterLabel.toLowerCase().contains("fast")) {
-            results.applyFastestFilter();
-        } else {
-            results.applyCheapestFilter();
-        }
-        Assert.assertTrue(results.hasResults(), "Listings should display after " + filterLabel);
 
-        // Near-term dates: Full Payment path — use priced Pay CTA (not Pay in Installment)
+        // Near-term: Full Payment uses priced Pay CTA (not Pay in Installment)
         if (results.isPayInInstallmentVisible()) {
-            ExtentReportManager.logInfo("Pay in Installment visible on near-term results — still selecting Full Payment Pay CTA");
+            ExtentReportManager.logInfo("Pay in Installment visible — still selecting Full Payment Pay CTA");
         }
 
-        results.selectPayAtIndex(0);
+        // selectCheapest/selectFastest use robust Pay-tap + coordinate fallbacks
+        if (filterLabel.toLowerCase().contains("fast")) {
+            results.selectFastest();
+        } else {
+            results.selectCheapest();
+        }
         pause(3000);
         PermissionDialog.dismissAll(2);
 
