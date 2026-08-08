@@ -168,20 +168,69 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         return Integer.parseInt(TestDataReader.get("flight.return.days.after.departure", "7").trim());
     }
 
-    protected void confirmPastFareToSummary() {
-        PriceSummaryPage summary = new PriceSummaryPage();
-        pause(2000);
-        if (summary.hasProceedWithPayment()) {
-            Assert.assertFalse(summary.getDisplayedTextsSnapshot().isEmpty(),
-                    "Itinerary / price content should be visible");
-            summary.proceedWithPayment();
-            pause(2500);
+    protected void ensureTravelHouseForeground() {
+        HomePage home = new HomePage();
+        home.bringAppToForeground();
+        pause(1000);
+        try {
+            String src = UiHelper.getPageSourceSafe();
+            if (src != null) {
+                String lower = src.toLowerCase();
+                if (lower.contains("portable hotspot") || lower.contains("usb tethering")
+                        || lower.contains("com.android.settings")
+                        || (!lower.contains("travelhouse") && !lower.contains("search flight")
+                        && !lower.contains("cheapest") && !lower.contains("proceed with payment")
+                        && !lower.contains("installment") && !lower.contains("my travellers"))) {
+                    ExtentReportManager.logInfo("Left Travel House UI — recovering with Back + activateApp");
+                    adbKeyEvent(4);
+                    pause(600);
+                    home.bringAppToForeground();
+                    pause(1200);
+                }
+            }
+        } catch (Exception e) {
+            ExtentReportManager.logInfo("Foreground check note: " + e.getMessage());
+            home.bringAppToForeground();
         }
+    }
+
+    protected void confirmPastFareToSummary() {
+        ensureTravelHouseForeground();
+        PriceSummaryPage summary = new PriceSummaryPage();
+        long deadline = System.currentTimeMillis() + 25_000L;
+        boolean advanced = false;
+        while (System.currentTimeMillis() < deadline) {
+            PermissionDialog.dismissAll(1);
+            if (summary.hasProceedWithPayment()) {
+                Assert.assertFalse(summary.getDisplayedTextsSnapshot().isEmpty(),
+                        "Itinerary / price content should be visible");
+                summary.proceedWithPayment();
+                pause(2500);
+                advanced = true;
+                break;
+            }
+            if (summary.isDisplayed() || summary.hasTotalPrice()
+                    || UiHelper.waitForDescContains("My Travellers", 1)
+                    || UiHelper.waitForDescContains("Terms", 1)
+                    || UiHelper.waitForDescContains("Price Summary", 1)
+                    || UiHelper.waitForDescContains("Total Price", 1)) {
+                advanced = true;
+                break;
+            }
+            // Still on installment sheet — try Continue once
+            if (UiHelper.waitForDescContains("month", 1) || UiHelper.waitForDescContains("Installment", 1)) {
+                new InstallmentPlansPage().continueIfPresent();
+            }
+            pause(1000);
+        }
+        ensureTravelHouseForeground();
         Assert.assertTrue(
-                summary.isDisplayed() || summary.hasTotalPrice() || summary.hasProceedWithPayment()
-                        || UiHelper.waitForDescContains("My Travellers", 2)
+                advanced
+                        || summary.isDisplayed() || summary.hasTotalPrice() || summary.hasProceedWithPayment()
+                        || UiHelper.waitForDescContains("My Travellers", 3)
                         || UiHelper.waitForDescContains("Terms", 2)
-                        || UiHelper.waitForDescContains("Installment", 2),
+                        || UiHelper.waitForDescContains("Price Summary", 2)
+                        || UiHelper.waitForDescContains("Proceed with payment", 2),
                 "Expected price summary / next booking step");
     }
 
@@ -261,11 +310,13 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         results.selectPayInInstallmentAtIndex(0);
         pause(3000);
         PermissionDialog.dismissAll(2);
+        ensureTravelHouseForeground();
 
         InstallmentPlansPage plansPage = new InstallmentPlansPage();
         Assert.assertTrue(plansPage.waitUntilDisplayed(20),
                 "Installment plans must show before selecting: " + planLabel);
         plansPage.selectPlan(planLabel);
+        ensureTravelHouseForeground();
         confirmPastFareToSummary();
         ExtentReportManager.logInfo(filterLabel + " + Installment plan [" + planLabel + "] completed");
     }
