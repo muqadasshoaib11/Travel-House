@@ -65,6 +65,24 @@ public class DatePickerPage {
         if (tryTapDay(day)) {
             return;
         }
+        // UiScrollable into view (more reliable than blind swipes on Flutter calendars)
+        for (String fragment : new String[]{
+                FRAG_PADDED.format(day),
+                FRAG_UNPADDED.format(day),
+                CELL_PADDED.format(day),
+                CELL_UNPADDED.format(day)
+        }) {
+            try {
+                driver.findElement(AppiumBy.androidUIAutomator(
+                        "new UiScrollable(new UiSelector().scrollable(true)).scrollIntoView("
+                                + "new UiSelector().descriptionContains(\"" + escape(fragment) + "\"))"));
+                if (tryTapDay(day)) {
+                    return;
+                }
+            } catch (Exception ignored) {
+                // try next fragment / fallback swipes
+            }
+        }
         boolean farFuture = day.isAfter(LocalDate.now().plusDays(40));
         for (int i = 0; i < 14; i++) {
             if (farFuture) {

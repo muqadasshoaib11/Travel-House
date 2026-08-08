@@ -176,12 +176,18 @@ public class InstallmentPlansPage {
     }
 
     public void continueIfPresent() {
-        UiHelper.tapByDesc("Continue");
-        UiHelper.tapByDescContains("Continue");
-        UiHelper.tapByDescContains("Confirm");
-        UiHelper.tapByDescContains("Select");
-        UiHelper.tapByDescContains("Apply");
-        UiHelper.tapByDescContains("Next");
+        // Only tap explicit booking CTAs — broad "Select"/"Apply" can hit OS/settings chrome
+        if (UiHelper.tapByDesc("Continue") || UiHelper.tapByDescContains("Continue")) {
+            pause(1200);
+            return;
+        }
+        if (UiHelper.tapByDesc("Confirm") || UiHelper.tapByDescContains("Confirm")) {
+            pause(1200);
+            return;
+        }
+        if (UiHelper.tapByDesc("Next") || UiHelper.tapByDescContains("Next")) {
+            pause(1200);
+        }
     }
 
     private List<String> discoverPlanLabelsFromSource(String source) {
@@ -223,10 +229,13 @@ public class InstallmentPlansPage {
 
     private String normalize(String desc) {
         String n = desc.replace('\n', ' ').replaceAll("\\s+", " ").trim();
-        if (n.length() > 120) {
-            n = n.substring(0, 120);
+        // Prefer month-token identity so "1 month From £X" encodings don't create dupes
+        String monthKey = null;
+        java.util.regex.Matcher mk = java.util.regex.Pattern.compile("(?i)(\\d+)\\s*months?").matcher(n);
+        if (mk.find()) {
+            monthKey = mk.group(1) + " month";
         }
-        return n;
+        return monthKey != null ? monthKey : n;
     }
 
     private String safeDesc(WebElement el) {
