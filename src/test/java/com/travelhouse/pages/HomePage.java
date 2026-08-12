@@ -326,7 +326,59 @@ public class HomePage {
     }
 
     public void tapSearchFlight() {
-        tapRequired(searchFlight, "Search Flight");
+        // After date/airport pickers the CTA can be off-screen or momentarily missing
+        for (int attempt = 0; attempt < 6; attempt++) {
+            List<WebElement> elements = driver.findElements(searchFlight);
+            if (elements.isEmpty()) {
+                elements = driver.findElements(AppiumBy.androidUIAutomator(
+                        "new UiSelector().descriptionContains(\"Search Flight\")"));
+            }
+            if (!elements.isEmpty()) {
+                try {
+                    if (elements.get(0).isDisplayed()) {
+                        elements.get(0).click();
+                        return;
+                    }
+                } catch (Exception ignored) {
+                    // try coordinate / next attempt
+                }
+                try {
+                    tapCenter(elements.get(0));
+                    return;
+                } catch (Exception ignored) {
+                    // continue
+                }
+            }
+            if (attempt % 2 == 0) {
+                GestureUtil.swipeUp();
+            } else {
+                GestureUtil.swipeDown();
+            }
+            pause(600);
+            if (attempt == 3) {
+                openHomeTab();
+                scrollToFlightSearchForm();
+            }
+        }
+        throw new IllegalStateException("Search Flight not found on Home");
+    }
+
+    private void tapCenter(WebElement element) {
+        org.openqa.selenium.Rectangle rect = element.getRect();
+        int x = rect.x + Math.max(1, rect.width / 2);
+        int y = rect.y + Math.max(1, rect.height / 2);
+        org.openqa.selenium.interactions.PointerInput finger =
+                new org.openqa.selenium.interactions.PointerInput(
+                        org.openqa.selenium.interactions.PointerInput.Kind.TOUCH, "finger");
+        org.openqa.selenium.interactions.Sequence tap =
+                new org.openqa.selenium.interactions.Sequence(finger, 1);
+        tap.addAction(finger.createPointerMove(java.time.Duration.ZERO,
+                org.openqa.selenium.interactions.PointerInput.Origin.viewport(), x, y));
+        tap.addAction(finger.createPointerDown(
+                org.openqa.selenium.interactions.PointerInput.MouseButton.LEFT.asArg()));
+        tap.addAction(finger.createPointerUp(
+                org.openqa.selenium.interactions.PointerInput.MouseButton.LEFT.asArg()));
+        driver.perform(java.util.Collections.singletonList(tap));
     }
 
     private void tapRequired(By locator, String label) {
