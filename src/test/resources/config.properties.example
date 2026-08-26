@@ -19,6 +19,9 @@ device.name=
 login.email=
 login.password=
 
+# Return search fare mode (full | installment) — set per flow branch
+fare.selection.mode=full
+
 # Reports
 report.dir=reports
 screenshot.dir=screenshots

@@ -18,7 +18,38 @@ public class FareSelectionPage {
         return UiHelper.isAnyDisplayed(fullPaymentDesc, installmentsDesc)
                 || UiHelper.isAnyDisplayed(
                 AppiumBy.androidUIAutomator("new UiSelector().textContains(\"Full Payment\")"),
-                AppiumBy.androidUIAutomator("new UiSelector().textContains(\"Installment\")"));
+                AppiumBy.androidUIAutomator("new UiSelector().textContains(\"Installment\")"),
+                AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Pay in full\")"),
+                AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Pay monthly\")"),
+                AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Instalment\")"),
+                AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Select Fare\")"));
+    }
+
+    /** Polls (and gently scrolls) until Full Payment / Installments options appear. */
+    public boolean waitUntilDisplayed(int timeoutSeconds) {
+        long deadline = System.currentTimeMillis() + timeoutSeconds * 1000L;
+        int tick = 0;
+        while (System.currentTimeMillis() < deadline) {
+            if (isDisplayed()) {
+                return true;
+            }
+            // Some fare cards sit below the itinerary fold
+            if (tick > 0 && tick % 3 == 0) {
+                try {
+                    com.travelhouse.utils.GestureUtil.swipeUp();
+                } catch (Exception ignored) {
+                    // ignore
+                }
+            }
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return isDisplayed();
+            }
+            tick++;
+        }
+        return isDisplayed();
     }
 
     public boolean isFullPaymentVisible() {
@@ -55,10 +86,13 @@ public class FareSelectionPage {
     }
 
     public void selectInstallments() {
-        if (!UiHelper.tapByDescContains("Installment") && !UiHelper.tapByTextContains("Installment")
-                && !UiHelper.tapByDescContains("Instalment") && !UiHelper.tapByTextContains("Instalment")) {
-            throw new IllegalStateException("Installments option not found");
+        if (UiHelper.tapByDescContains("Installment") || UiHelper.tapByTextContains("Installment")
+                || UiHelper.tapByDescContains("Instalment") || UiHelper.tapByTextContains("Instalment")
+                || UiHelper.tapByDescContains("Pay monthly") || UiHelper.tapByTextContains("Pay monthly")
+                || UiHelper.tapByDescContains("monthly") || UiHelper.tapByDescContains("instalment")) {
+            return;
         }
+        throw new IllegalStateException("Installments option not found");
     }
 
     public void selectFareType(String fareType) {

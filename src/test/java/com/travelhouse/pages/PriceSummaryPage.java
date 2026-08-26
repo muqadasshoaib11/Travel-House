@@ -29,13 +29,23 @@ public class PriceSummaryPage {
     public boolean isDisplayed() {
         return UiHelper.isAnyDisplayed(summaryHint, totalHint, netPrice, proceed)
                 || UiHelper.isAnyDisplayed(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Price\")"));
+                "new UiSelector().descriptionContains(\"Price\")"))
+                || hasProceedCta();
     }
 
     public boolean hasProceedWithPayment() {
+        return hasProceedCta();
+    }
+
+    /** "Proceed with payment" or "Proceed With Query" (installment / query path). */
+    public boolean hasProceedCta() {
         return !DriverManager.getDriver().findElements(proceed).isEmpty()
-                || !DriverManager.getDriver().findElements(
-                AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Proceed with payment\")")).isEmpty();
+                || !DriverManager.getDriver().findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Proceed with payment\")")).isEmpty()
+                || !DriverManager.getDriver().findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Proceed With Query\")")).isEmpty()
+                || !DriverManager.getDriver().findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Proceed with Query\")")).isEmpty();
     }
 
     public boolean hasTotalPrice() {
@@ -51,7 +61,8 @@ public class PriceSummaryPage {
                 AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Pay\")"),
                 AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Adult\")"),
                 AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"ATOL\")"),
-                AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Insurance\")")
+                AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Insurance\")"),
+                AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Proceed\")")
         );
         for (By locator : locators) {
             for (WebElement node : DriverManager.getDriver().findElements(locator)) {
@@ -69,13 +80,46 @@ public class PriceSummaryPage {
     }
 
     public void proceedWithPayment() {
-        if (!UiHelper.tapByDesc("Proceed with payment")
-                && !UiHelper.tapByDescContains("Proceed with payment")) {
-            throw new IllegalStateException("Proceed with payment not found");
+        proceedPastSummary();
+    }
+
+    public void proceedPastSummary() {
+        if (UiHelper.tapByDesc("Proceed with payment")
+                || UiHelper.tapByDescContains("Proceed with payment")
+                || UiHelper.tapByDesc("Proceed With Query")
+                || UiHelper.tapByDescContains("Proceed With Query")
+                || UiHelper.tapByDescContains("Proceed with Query")) {
+            return;
         }
+        throw new IllegalStateException("Proceed CTA not found (payment / query)");
     }
 
     public void acceptTermsAndConditions() {
+        // Prefer empty clickable checkbox node (same pattern as installment sheet)
+        try {
+            org.openqa.selenium.Dimension size = DriverManager.getDriver().manage().window().getSize();
+            int minY = (int) (size.height * 0.65);
+            for (WebElement el : DriverManager.getDriver().findElements(
+                    AppiumBy.androidUIAutomator("new UiSelector().clickable(true)"))) {
+                String desc = "";
+                try {
+                    desc = el.getAttribute("contentDescription");
+                } catch (Exception ignored) {
+                    // skip
+                }
+                if (desc != null && !desc.isBlank()) {
+                    continue;
+                }
+                org.openqa.selenium.Rectangle r = el.getRect();
+                if (r.width > 0 && r.width <= 90 && r.height > 0 && r.height <= 90
+                        && r.y >= minY && r.x < size.width * 0.25) {
+                    el.click();
+                    return;
+                }
+            }
+        } catch (Exception ignored) {
+            // fall through
+        }
         List<WebElement> checkboxes = DriverManager.getDriver().findElements(
                 AppiumBy.className("android.widget.CheckBox"));
         if (!checkboxes.isEmpty()) {
@@ -86,13 +130,12 @@ public class PriceSummaryPage {
             }
             return;
         }
-        // Fallback: tap "I accept" label (not the Terms link)
         UiHelper.tapByDescContains("I accept");
     }
 
     public void continueIfPresent() {
-        if (hasProceedWithPayment()) {
-            proceedWithPayment();
+        if (hasProceedCta()) {
+            proceedPastSummary();
             return;
         }
         if (!DriverManager.getDriver().findElements(continueBtn).isEmpty()

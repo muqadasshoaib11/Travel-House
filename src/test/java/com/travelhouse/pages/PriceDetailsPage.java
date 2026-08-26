@@ -30,8 +30,9 @@ public class PriceDetailsPage {
     private final By totalPrice = AppiumBy.androidUIAutomator(
             "new UiSelector().descriptionContains(\"Total Price\")");
 
+    /** True only on the dedicated Price Details screen (not Price Summary / Pay CTAs). */
     public boolean isDisplayed() {
-        return UiHelper.isAnyDisplayed(detailsHint, detailsText, paymentHint, totalHint, breakdown, netPrice, totalPrice);
+        return UiHelper.isAnyDisplayed(detailsHint, detailsText);
     }
 
     public List<String> getTotalOrBreakdownSnapshot() {

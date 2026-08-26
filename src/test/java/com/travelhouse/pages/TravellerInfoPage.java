@@ -49,9 +49,9 @@ public class TravellerInfoPage {
 
     public void waitUntilVisible() {
         Assert.assertTrue(
-                UiHelper.waitForDescContains("Who's Going", 25)
-                        || UiHelper.waitForDescContains("My Travellers", 10)
-                        || UiHelper.waitForDescContains("Contact Information", 10)
+                UiHelper.waitForDescContains("Who's Going", 12)
+                        || UiHelper.waitForDescContains("My Travellers", 4)
+                        || UiHelper.waitForDescContains("Contact Information", 4)
                         || isDisplayed(),
                 "Traveller Information / My Travellers screen should be visible");
     }
@@ -64,6 +64,7 @@ public class TravellerInfoPage {
         dismissOverlayIfOpen();
         selectTravellerFromDropdown();
         dismissOverlayIfOpen();
+        ensureNameFieldsAlphabeticOnly();
         fillSpecialRequests();
         fillFrequentFlyer();
         fillContactSectionWithSignInEmail();
@@ -76,11 +77,19 @@ public class TravellerInfoPage {
     }
 
     public void selectTravellerFromDropdown() {
+        String savedName = TestDataReader.get("traveller.saved.name", "Muqadas Shoaib");
         boolean opened = UiHelper.tapByDescContains("Please Select a Saved Traveller")
                 || UiHelper.tapByDescContains("My Travellers")
                 || UiHelper.tapByDescContains("Select a Saved Traveller")
                 || UiHelper.tapByDescContains("Adult");
         pause(1500);
+
+        if (UiHelper.tapByDesc(savedName) || UiHelper.tapByDescContains(savedName)) {
+            System.out.println("[Traveller] Selected saved traveller: " + savedName);
+            pause(1500);
+            dismissOverlayIfOpen();
+            return;
+        }
 
         List<WebElement> options = driver.findElements(AppiumBy.androidUIAutomator(
                 "new UiSelector().clickable(true)"));
@@ -95,7 +104,7 @@ public class TravellerInfoPage {
                     || desc.contains("Who's") || desc.contains("Select")) {
                 continue;
             }
-            if (desc.contains(" ") || Character.isLetter(desc.charAt(0))) {
+            if (desc.contains(savedName) || desc.contains(" ") || Character.isLetter(desc.charAt(0))) {
                 System.out.println("[Traveller] Selected from dropdown: " + desc);
                 option.click();
                 selected = true;
@@ -108,25 +117,189 @@ public class TravellerInfoPage {
                 "Could not select a traveller name from the Traveller dropdown");
     }
 
+    /**
+     * One-pass traveller completion: pick saved name from dropdown, fill remaining fields once.
+     * Does not re-enter the same values in a loop.
+     */
+    public void completeOnceSelectNameAndFill() {
+        waitUntilVisible();
+        dismissOverlayIfOpen();
+        selectTravellerFromDropdown();
+        dismissOverlayIfOpen();
+        ensureNameFieldsAlphabeticOnly();
+        fillSpecialRequests();
+        fillFrequentFlyer();
+        fillContactSectionWithSignInEmail();
+        GestureUtil.swipeUp();
+        pause(600);
+    }
+
+    /** Taps Continue once and waits for navigation — no second fill pass. */
+    public void continueOnceAndEnd() {
+        continueThroughSummaryOnceAndStop();
+    }
+
+    /**
+     * My Travellers Continue → verify Summary → Continue once → stop
+     * (matches Playwright installment chunk).
+     */
+    public void continueThroughSummaryOnceAndStop() {
+        dismissOverlayIfOpen();
+        GestureUtil.swipeUp();
+        pause(500);
+        List<WebElement> continueBtns = driver.findElements(AppiumBy.accessibilityId("Continue"));
+        if (continueBtns.isEmpty()) {
+            continueBtns = driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionContains(\"Continue\")"));
+        }
+        Assert.assertFalse(continueBtns.isEmpty(), "Continue button not found on Traveller screen");
+        tapCenterSafe(continueBtns.get(0));
+        pause(1500);
+        dismissOverlayIfOpen();
+
+        Assert.assertTrue(
+                UiHelper.waitForDescContains("Summary", 30)
+                        || UiHelper.waitForDescContains("Price Summary", 5)
+                        || new PriceSummaryPage().isDisplayed()
+                        || new PriceSummaryPage().hasTotalPrice(),
+                "Summary screen did not appear after My Travellers Continue");
+
+        List<WebElement> summaryContinue = driver.findElements(AppiumBy.accessibilityId("Continue"));
+        if (summaryContinue.isEmpty()) {
+            summaryContinue = driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionContains(\"Continue\")"));
+        }
+        if (!summaryContinue.isEmpty()) {
+            tapCenterSafe(summaryContinue.get(0));
+            pause(1000);
+            dismissOverlayIfOpen();
+        }
+        System.out.println("[Traveller] Stopped after Summary Continue (no further payment steps)");
+    }
+
+    /**
+     * First/Last name fields must contain letters only — never digits (mobile must not bleed into name).
+     */
+    public void ensureNameFieldsAlphabeticOnly() {
+        String first = lettersOnly(TestDataReader.get("traveller.first.name", "Muqadas"));
+        String last = lettersOnly(TestDataReader.get("traveller.last.name", "Shoaib"));
+        if (first.isBlank()) {
+            first = "Muqadas";
+        }
+        if (last.isBlank()) {
+            last = "Shoaib";
+        }
+
+        List<WebElement> fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
+        List<WebElement> nameCandidates = new ArrayList<>();
+        for (WebElement field : fields) {
+            try {
+                String text = field.getText() == null ? "" : field.getText().trim();
+                String hint = "";
+                try {
+                    hint = String.valueOf(field.getAttribute("contentDescription"));
+                } catch (Exception ignored) {
+                    // ignore
+                }
+                boolean looksLikeEmail = text.contains("@") || hint.toLowerCase().contains("email");
+                boolean looksLikeMobile = text.matches(".*\\d{6,}.*")
+                        || hint.toLowerCase().contains("mobile")
+                        || hint.toLowerCase().contains("phone");
+                if (looksLikeEmail || looksLikeMobile) {
+                    continue;
+                }
+                // Name fields: empty, letters, or polluted with digits that we must fix
+                if (text.isBlank() || text.matches(".*[A-Za-z].*") || text.matches(".*\\d.*")) {
+                    nameCandidates.add(field);
+                }
+            } catch (Exception ignored) {
+                // next
+            }
+        }
+
+        // Always apply configured alphabetic First / Last (never leave digits or duplicated first name)
+        nameCandidates.sort((a, b) -> Integer.compare(a.getRect().y, b.getRect().y));
+        if (nameCandidates.size() >= 1) {
+            typeIntoField(nameCandidates.get(0), first);
+            System.out.println("[Traveller] First name set to alphabetic: " + first);
+        }
+        if (nameCandidates.size() >= 2) {
+            typeIntoField(nameCandidates.get(1), last);
+            System.out.println("[Traveller] Last name set to alphabetic: " + last);
+        } else if (nameCandidates.size() == 1) {
+            // Single combined field — use "First Last" letters only
+            typeIntoField(nameCandidates.get(0), first + " " + last);
+            System.out.println("[Traveller] Full name set to alphabetic: " + first + " " + last);
+        }
+
+        // Final sweep: any EditText whose value has digits and no @ → treat as polluted name and clear to letters
+        fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
+        for (WebElement field : fields) {
+            String text = safeText(field);
+            if (text.contains("@")) {
+                continue;
+            }
+            if (text.matches(".*\\d.*") && text.matches(".*[A-Za-z].*") && text.length() < 40) {
+                // mixed name+digits — restore last name letters only
+                typeIntoField(field, last);
+                System.out.println("[Traveller] Cleared digits from name field → " + last);
+            } else if (text.matches("^\\d+$") && text.length() >= 6) {
+                // pure digits wrongly in a name-like field above mobile — leave if this IS mobile;
+                // only rewrite if field is higher on screen than Mobile Number label
+                if (isAboveMobileLabel(field)) {
+                    typeIntoField(field, last);
+                    System.out.println("[Traveller] Replaced digits-only name field with: " + last);
+                }
+            }
+        }
+        hideKeyboardQuietly();
+    }
+
     public void fillSpecialRequests() {
         GestureUtil.swipeUp();
         pause(500);
 
         boolean expanded = UiHelper.tapByDescContains("Add Special Request")
                 || UiHelper.tapByDescContains("Special Request");
-        pause(1500);
+        pause(600);
         if (expanded) {
             System.out.println("[Traveller] Opened Special Requests section");
+        } else {
+            // Try scrolling into view once more
+            GestureUtil.swipeUp();
+            pause(500);
+            UiHelper.tapByDescContains("Special Request");
+            pause(1000);
         }
 
-        // Keep sheet open — select all special-request dropdowns in one pass
-        selectAnyFromDropdown("Seat Preference", "Exit Seat");
-        if (!UiHelper.waitForDescContains("Meal Request", 2)) {
+        String seat = TestDataReader.get("traveller.seat.preference", "Cot");
+        String meal = TestDataReader.get("traveller.meal.request", "Fruit Meal");
+        String service = TestDataReader.get("traveller.special.service", "Blind Passenger");
+
+        // Playwright chunk opens from current labels: Any / Any meal / No Special Service Requested
+        Assert.assertTrue(
+                selectDropdownWithRetry("Any", seat,
+                        List.of("Cot", "Code", "Window", "Aisle", "Exit Seat", "Any", "Middle"))
+                        || selectDropdownWithRetry("Seat Preference", seat,
+                        List.of("Cot", "Code", "Window", "Aisle", "Exit Seat", "Any", "Middle")),
+                "Seat Preference dropdown must be selected (Cot on current build)");
+        if (!UiHelper.waitForDescContains("Meal Request", 2)
+                && !UiHelper.waitForDescContains("Any meal", 1)) {
             UiHelper.tapByDescContains("Add Special Request");
-            pause(800);
+            pause(500);
         }
-        selectAnyFromDropdown("Meal Request", "Gluten Free");
-        selectAnyFromDropdown("Special Service", "No Special Service Requested");
+        Assert.assertTrue(
+                selectDropdownWithRetry("Any meal", meal,
+                        List.of("Fruit Meal", "Halal", "Vegetarian", "Gluten Free", "Vegan", "Any"))
+                        || selectDropdownWithRetry("Meal Request", meal,
+                        List.of("Fruit Meal", "Halal", "Vegetarian", "Gluten Free", "Vegan", "Any")),
+                "Meal Request dropdown must be selected");
+        Assert.assertTrue(
+                selectDropdownWithRetry("No Special Service Requested", service,
+                        List.of("Blind Passenger", "No Special Service Requested", "Wheelchair", "Bassinet"))
+                        || selectDropdownWithRetry("Special Service", service,
+                        List.of("Blind Passenger", "No Special Service Requested", "Wheelchair", "Bassinet")),
+                "Special Service dropdown must be selected");
 
         dismissOverlayIfOpen();
         pause(400);
@@ -140,17 +313,51 @@ public class TravellerInfoPage {
     }
 
     public void fillFrequentFlyer() {
-        String ff = TestDataReader.get("traveller.frequent.flyer", "PK123456789");
+        String ff = TestDataReader.get("traveller.frequent.flyer", "Muqadas");
         GestureUtil.swipeUp();
-        pause(400);
+        pause(300);
 
-        // Frequent Flyer lives inside the big traveller card — skip EditText typing that
-        // can overwrite Email. Log presence only if the label exists.
-        if (UiHelper.waitForDescContains("Frequent Flyer", 2)) {
-            System.out.println("[Traveller] Frequent Flyer section visible (value=" + ff + ")");
-        } else {
-            System.out.println("[Traveller] Frequent Flyer field not found — skipped if not on this build");
+        if (!UiHelper.waitForDescContains("Frequent Flyer", 2)) {
+            System.out.println("[Traveller] Frequent Flyer section not found — skipped");
+            return;
         }
+        List<WebElement> fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
+        for (WebElement field : fields) {
+            try {
+                String hint = "";
+                try {
+                    hint = String.valueOf(field.getAttribute("contentDescription"));
+                } catch (Exception ignored) {
+                    // ignore
+                }
+                String text = field.getText() == null ? "" : field.getText();
+                if (hint.toLowerCase().contains("frequent") || hint.toLowerCase().contains("flyer")
+                        || (text.isBlank() && hint.toLowerCase().contains("flyer"))) {
+                    typeIntoField(field, ff);
+                    System.out.println("[Traveller] Frequent Flyer set to: " + ff);
+                    hideKeyboardQuietly();
+                    return;
+                }
+            } catch (Exception ignored) {
+                // next
+            }
+        }
+        // Fallback: last empty EditText in view after Frequent Flyer label
+        for (int i = fields.size() - 1; i >= 0; i--) {
+            WebElement field = fields.get(i);
+            try {
+                String text = field.getText() == null ? "" : field.getText().trim();
+                if (text.isBlank() || text.equalsIgnoreCase(ff)) {
+                    typeIntoField(field, ff);
+                    System.out.println("[Traveller] Frequent Flyer (fallback field) set to: " + ff);
+                    hideKeyboardQuietly();
+                    return;
+                }
+            } catch (Exception ignored) {
+                // next
+            }
+        }
+        System.out.println("[Traveller] Frequent Flyer field not typed — value expected=" + ff);
         dismissOverlayIfOpen();
     }
 
@@ -164,50 +371,64 @@ public class TravellerInfoPage {
 
         String email = Credentials.isConfigured() ? Credentials.email()
                 : TestDataReader.get("traveller.email", "");
-        String mobile = TestDataReader.get("traveller.mobile", "7700900123");
-        mobile = mobile.replaceAll("\\D", "");
+        // Pakistan mobile (local digits after +92) — letters never go here
+        String mobile = TestDataReader.get("traveller.mobile", "3001234567").replaceAll("\\D", "");
+        if (mobile.startsWith("92") && mobile.length() > 10) {
+            mobile = mobile.substring(2);
+        }
         if (mobile.length() > 10) {
             mobile = mobile.substring(mobile.length() - 10);
         }
 
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             if (UiHelper.waitForDescContains("Mobile Number", 2)
-                    || UiHelper.waitForDescContains("Email Address", 1)) {
+                    || UiHelper.waitForDescContains("Email Address", 1)
+                    || UiHelper.waitForDescContains("Contact Information", 1)) {
                 break;
             }
             GestureUtil.swipeUp();
             pause(500);
         }
 
-        // Prefer UK +44 for Travel House UK; fall back to Pakistan +92 if configured
-        String preferredCode = TestDataReader.get("traveller.country.code", "United Kingdom");
-        if (preferredCode.toLowerCase().contains("pakistan")) {
-            selectCountryCodePakistan();
-        } else {
-            selectCountryCodeUnitedKingdom();
-        }
+        // Always Pakistan (+92) for contact country code
+        selectCountryCodePakistan();
         hideKeyboardQuietly();
+        Assert.assertTrue(countryCodeIsPakistan() || UiHelper.waitForDescContains("+92", 2),
+                "Contact country code must be Pakistan (+92)");
 
+        // Email: prefer field that already has @ or widest field below Contact Information
         List<WebElement> fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
-        WebElement emailField = findWideField(fields);
+        WebElement emailField = findEmailField(fields);
         if (emailField != null && !email.isBlank()) {
             typeIntoField(emailField, email);
             hideKeyboardQuietly();
             System.out.println("[Traveller] Email set from Sign-In credentials");
         }
 
-        fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
-        WebElement mobileField = findMobileField(fields);
-        if (mobileField != null) {
-            typeIntoField(mobileField, mobile);
-            hideKeyboardQuietly();
-        }
-        System.out.println("[Traveller] Mobile entered (10 digits)");
+        // Mobile: focus by label then type digits only into that field
+        typeMobileBesideLabel(mobile);
+        hideKeyboardQuietly();
+        System.out.println("[Traveller] Mobile entered with Pakistan (+92): " + mobile);
+
+        // Re-assert names were not polluted by mobile typing
+        ensureNameFieldsAlphabeticOnly();
 
         GestureUtil.swipeUp();
         pause(400);
-        selectAnyFromDropdown("How to Contact", "Any (Phone + Email)");
-        selectAnyFromDropdown("Contact Time", "Any Time");
+        String how = TestDataReader.get("traveller.how.to.contact", "Phone");
+        String when = TestDataReader.get("traveller.contact.time", "09:00 to 12:00");
+        if (!selectDropdownWithRetry("How to Contact", how,
+                List.of("Phone", "Any (Phone + Email)", "Email", "WhatsApp"))) {
+            selectDropdownWithRetry("Any (Phone + Email)", how,
+                    List.of("Phone", "Any (Phone + Email)", "Email", "WhatsApp"));
+        }
+        if (!selectDropdownWithRetry("Contact Time", when,
+                List.of("09:00 to 12:00", "9:00-12:00", "9:00 – 12:00", "09:00-12:00",
+                        "9:00", "Morning", "Any Time"))) {
+            selectDropdownWithRetry("Any Time", when,
+                    List.of("09:00 to 12:00", "9:00-12:00", "9:00 – 12:00", "09:00-12:00",
+                            "9:00", "Morning", "Any Time"));
+        }
     }
 
     private void selectCountryCodeUnitedKingdom() {
@@ -436,41 +657,70 @@ public class TravellerInfoPage {
     }
 
     private void selectAnyFromDropdown(String primaryLabel, String preferredOption) {
-        boolean opened = UiHelper.tapByDescContains(primaryLabel)
-                || UiHelper.tapByTextContains(primaryLabel);
-        if (!opened) {
-            System.out.println("[Traveller] Dropdown not found (may be absent on build): " + primaryLabel);
-            return;
-        }
-        pause(1000);
+        selectDropdownWithRetry(primaryLabel, preferredOption, List.of(preferredOption));
+    }
 
-        if (preferredOption != null && (UiHelper.tapByDesc(preferredOption)
-                || UiHelper.tapByDescContains(preferredOption)
-                || UiHelper.tapByTextContains(preferredOption))) {
-            System.out.println("[Traveller] " + primaryLabel + " → " + preferredOption);
-            pause(800);
-            dismissOverlayIfOpen();
-            return;
-        }
-
-        List<WebElement> options = driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().clickable(true)"));
-        for (WebElement option : options) {
-            String desc = safeDesc(option);
-            if (!isPlausibleDropdownOption(desc, primaryLabel)) {
+    /**
+     * Opens a labelled dropdown and selects preferred option, trying fallbacks then any plausible option.
+     */
+    private boolean selectDropdownWithRetry(String primaryLabel, String preferredOption, List<String> fallbacks) {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            GestureUtil.swipeUp();
+            pause(400);
+            boolean opened = UiHelper.tapByDescContains(primaryLabel)
+                    || UiHelper.tapByTextContains(primaryLabel)
+                    || UiHelper.tapByDesc(primaryLabel);
+            if (!opened) {
+                System.out.println("[Traveller] Dropdown open attempt " + (attempt + 1)
+                        + " failed for: " + primaryLabel);
                 continue;
             }
-            try {
-                System.out.println("[Traveller] " + primaryLabel + " → " + desc);
-                option.click();
-                pause(800);
-                dismissOverlayIfOpen();
-                return;
-            } catch (Exception e) {
-                break;
+            pause(1200);
+
+            List<String> candidates = new ArrayList<>();
+            if (preferredOption != null && !preferredOption.isBlank()) {
+                candidates.add(preferredOption);
             }
+            if (fallbacks != null) {
+                for (String f : fallbacks) {
+                    if (f != null && !f.isBlank() && !candidates.contains(f)) {
+                        candidates.add(f);
+                    }
+                }
+            }
+            for (String option : candidates) {
+                if (UiHelper.tapByDesc(option)
+                        || UiHelper.tapByDescContains(option)
+                        || UiHelper.tapByTextContains(option)) {
+                    System.out.println("[Traveller] " + primaryLabel + " → " + option);
+                    pause(800);
+                    dismissOverlayIfOpen();
+                    return true;
+                }
+            }
+
+            List<WebElement> options = driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().clickable(true)"));
+            for (WebElement option : options) {
+                String desc = safeDesc(option);
+                if (!isPlausibleDropdownOption(desc, primaryLabel)) {
+                    continue;
+                }
+                try {
+                    System.out.println("[Traveller] " + primaryLabel + " → " + desc + " (fallback option)");
+                    option.click();
+                    pause(800);
+                    dismissOverlayIfOpen();
+                    return true;
+                } catch (Exception e) {
+                    break;
+                }
+            }
+            dismissOverlayIfOpen();
+            pause(400);
         }
-        dismissOverlayIfOpen();
+        System.out.println("[Traveller] Could not select value for dropdown: " + primaryLabel);
+        return false;
     }
 
     private boolean isPlausibleDropdownOption(String desc, String primaryLabel) {
@@ -497,11 +747,12 @@ public class TravellerInfoPage {
         }
 
         boolean seatLike = lower.contains("seat") || lower.contains("window") || lower.contains("aisle")
-                || lower.contains("middle") || lower.equals("any");
+                || lower.contains("middle") || lower.contains("cot") || lower.contains("code")
+                || lower.equals("any");
         boolean mealLike = lower.contains("meal") || lower.contains("vegetarian") || lower.contains("halal")
                 || lower.contains("vegan") || lower.contains("gluten") || lower.contains("kosher");
         boolean serviceLike = lower.contains("service") || lower.contains("wheelchair")
-                || lower.contains("bassinet") || lower.contains("legroom");
+                || lower.contains("bassinet") || lower.contains("legroom") || lower.contains("no special");
         boolean contactLike = lower.contains("email") || lower.contains("phone") || lower.contains("whatsapp")
                 || lower.contains("sms") || lower.contains("call") || lower.contains("message");
         boolean timeLike = lower.contains("morning") || lower.contains("afternoon") || lower.contains("evening")
@@ -539,7 +790,74 @@ public class TravellerInfoPage {
         if (label.contains("time") && timeLike) {
             return true;
         }
-        return false;
+        // Accept generic non-chrome options when sheet is open
+        return !lower.contains("search") && !lower.contains("flying");
+    }
+
+    private WebElement findEmailField(List<WebElement> fields) {
+        for (WebElement field : fields) {
+            String text = safeText(field);
+            if (text.contains("@")) {
+                return field;
+            }
+        }
+        return findWideField(fields);
+    }
+
+    private void typeMobileBesideLabel(String mobileDigits) {
+        String digitsOnly = mobileDigits == null ? "" : mobileDigits.replaceAll("\\D", "");
+        Assert.assertFalse(digitsOnly.isBlank(), "Mobile digits required");
+
+        // Tap near Mobile Number label so Flutter focuses the correct field
+        try {
+            List<WebElement> labels = driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionContains(\"Mobile Number\")"));
+            if (!labels.isEmpty()) {
+                Rectangle r = labels.get(0).getRect();
+                GestureUtil.tapAt(Math.min(r.x + r.width + 40, 900), r.y + r.height + 40);
+                pause(400);
+            }
+        } catch (Exception ignored) {
+            // fall through
+        }
+
+        List<WebElement> fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
+        WebElement mobileField = null;
+        for (WebElement field : fields) {
+            if (isAboveMobileLabel(field)) {
+                continue; // skip name fields above the mobile label
+            }
+            String text = safeText(field);
+            if (text.contains("@")) {
+                continue;
+            }
+            // Prefer empty or numeric fields below contact section
+            if (text.isBlank() || text.matches("\\d+")) {
+                mobileField = field;
+                break;
+            }
+        }
+        if (mobileField == null) {
+            mobileField = findMobileField(fields);
+        }
+        Assert.assertNotNull(mobileField, "Mobile number EditText not found");
+        typeIntoField(mobileField, digitsOnly);
+
+        // Guard: if a name field now contains these digits, clear it back to letters
+        ensureNameFieldsAlphabeticOnly();
+    }
+
+    private boolean isAboveMobileLabel(WebElement field) {
+        try {
+            List<WebElement> labels = driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionContains(\"Mobile Number\")"));
+            if (labels.isEmpty()) {
+                return false;
+            }
+            return field.getRect().y < labels.get(0).getRect().y;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private WebElement findWideField(List<WebElement> fields) {
@@ -564,6 +882,9 @@ public class TravellerInfoPage {
         int bestWidth = Integer.MAX_VALUE;
         for (WebElement field : fields) {
             try {
+                if (isAboveMobileLabel(field)) {
+                    continue;
+                }
                 String text = field.getText();
                 if (text != null && text.contains("@")) {
                     continue;
@@ -584,6 +905,9 @@ public class TravellerInfoPage {
         for (int i = fields.size() - 1; i >= 0; i--) {
             WebElement field = fields.get(i);
             try {
+                if (isAboveMobileLabel(field)) {
+                    continue;
+                }
                 String text = field.getText();
                 if (text != null && text.contains("@")) {
                     continue;
@@ -646,6 +970,22 @@ public class TravellerInfoPage {
         driver.perform(Collections.singletonList(tap));
     }
 
+    private static String lettersOnly(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replaceAll("[^A-Za-z ]", "").replaceAll("\\s+", " ").trim();
+    }
+
+    private static String safeText(WebElement el) {
+        try {
+            String t = el.getText();
+            return t == null ? "" : t.trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private static String safeDesc(WebElement el) {
         try {
             String d = el.getAttribute("contentDescription");
@@ -656,10 +996,6 @@ public class TravellerInfoPage {
     }
 
     private static void pause(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // No fixed sleeps — rely on explicit waits for UI state.
     }
 }

@@ -24,9 +24,8 @@ import org.testng.annotations.Test;
 /**
  * Full suite on feature/login-flight-search:
  * Login (or already Home) → verify Home content →
- * Return London→Jeddah: search, validate results, book through to My Travellers →
- * Home again →
- * One Way London→Karachi: same booking process.
+ * Return London→Jeddah: search, validate results, book through My Travellers (fill + Continue) →
+ * Home again → One Way London→Karachi: same. Stops after My Travellers Continue — no Price Details.
  * Uses login.email / login.password from config.properties (same as main).
  */
 public class DualRouteBookingSuiteTest extends JourneyBaseTest {
@@ -200,20 +199,14 @@ public class DualRouteBookingSuiteTest extends JourneyBaseTest {
                 "Should be on My Travellers / Traveller Information after booking steps");
         ExtentReportManager.logInfo("On My Travellers screen");
 
-        // Complete traveller using Sign-In email from config
-        traveller.completeTravellerFormUsingSignInEmail();
-        try {
-            traveller.continueAndVerifyNextScreen();
-            PriceDetailsPage details = new PriceDetailsPage();
-            pause(2000);
-            if (details.isDisplayed() || summary.hasTotalPrice()) {
-                ExtentReportManager.logInfo("Advanced past My Travellers toward Price Details");
-            }
-        } catch (AssertionError e) {
-            // Still on My Travellers is acceptable end-of-path for this suite step
-            Assert.assertTrue(traveller.isMyTravellersScreen() || traveller.isDisplayed(),
-                    "Expected My Travellers (or next screen). Continue issue: " + e.getMessage());
-            ExtentReportManager.logInfo("Remained on My Travellers after Continue attempt: " + e.getMessage());
+        // Complete traveller using Sign-In email, Continue once, stop (no Price Details automation)
+        traveller.completeOnceSelectNameAndFill();
+        traveller.continueOnceAndEnd();
+        if (new PriceDetailsPage().isDisplayed()) {
+            ExtentReportManager.logInfo(
+                    "Stopped after My Travellers Continue (Price Details visible but not automated)");
+        } else {
+            ExtentReportManager.logInfo("Ended " + tripLabel + " at My Travellers Continue");
         }
     }
 

@@ -1,0 +1,168 @@
+# Travel House Appium — Azure Pipelines (self-hosted Windows agent + USB phone)
+#
+# Required pipeline variables (mark secrets as secret):
+#   LOGIN_EMAIL, LOGIN_PASSWORD
+# Optional: DEVICE_UDID, APPIUM_SERVER_URL
+#
+# Register your PC as a self-hosted agent (same machine as GitHub Actions runner).
+# Update pool.name below if your agent pool is not "Default".
+
+trigger:
+  branches:
+    include:
+      - main
+      - master
+      - feature/login-flight-search
+      - feature/return-search-full-payment
+      - feature/return-search-installments
+  paths:
+    include:
+      - src/test/**
+      - pom.xml
+      - scripts/**
+      - azure-pipelines.yml
+
+pr:
+  branches:
+    include:
+      - main
+      - master
+  paths:
+    include:
+      - src/test/**
+      - pom.xml
+      - scripts/**
+      - azure-pipelines.yml
+
+parameters:
+  - name: suite
+    displayName: TestNG suite (auto = pick by branch)
+    type: string
+    default: auto
+    values:
+      - auto
+      - ci-health
+      - return-search
+      - return-july2027-installments
+      - return-search-full
+      - dual-route
+      - smoke
+      - regression
+  - name: skipAppiumStart
+    displayName: Skip starting Appium (use already-running server)
+    type: boolean
+    default: false
+
+pool:
+  name: Default
+  demands:
+    - Agent.OS -equals Windows_NT
+
+variables:
+  MAVEN_CACHE_FOLDER: $(Pipeline.Workspace)/.m2/repository
+  JAVA_HOME: C:\Program Files\Java\jdk-17
+
+steps:
+  - checkout: self
+    clean: true
+    fetchDepth: 1
+
+  - powershell: |
+      $ErrorActionPreference = "Continue"
+      Write-Host "Branch: $(Build.SourceBranchName)"
+      Write-Host "Commit: $(Build.SourceVersion)"
+      java -version
+      mvn -v
+      adb version
+    displayName: Verify Java, Maven, ADB
+
+  - task: Maven@3
+    displayName: Compile tests
+    inputs:
+      mavenPomFile: pom.xml
+      goals: test-compile
+      options: -B -DskipTests
+      javaHomeOption: Path
+      jdkDirectory: $(JAVA_HOME)
+      mavenOptions: -Xmx3072m
+
+  - powershell: |
+      $ErrorActionPreference = "Continue"
+      Write-Host "whoami=$(whoami)"
+      cmd /c "adb devices -l"
+      $ready = $false
+      for ($i = 1; $i -le 15; $i++) {
+        $raw = cmd /c "adb devices"
+        $devices = @($raw -split "`r?`n" | Where-Object { $_ -match "\tdevice$" })
+        if ($devices.Count -gt 0) {
+          Write-Host "Device ready: $($devices[0])"
+          $ready = $true
+          break
+        }
+        Write-Host "Waiting for device attempt $i/15 — keep phone unlocked"
+        Start-Sleep -Seconds 4
+        cmd /c "adb devices -l"
+      }
+      if (-not $ready) {
+        throw "No Android device connected. Run 'adb start-server' && 'adb devices' on the agent PC."
+      }
+    displayName: Wait for Android device
+
+  - powershell: |
+      $ErrorActionPreference = "Stop"
+      $choice = "${{ parameters.suite }}"
+      $branch = "$(Build.SourceBranchName)"
+      if ($choice -eq "auto" -or [string]::IsNullOrWhiteSpace($choice)) {
+        switch -Regex ($branch) {
+          "return-search-full-payment" { $choice = "return-search-full" }
+          "return-search-installments" { $choice = "return-july2027-installments" }
+          default { $choice = "ci-health" }
+        }
+      }
+      switch ($choice) {
+        "smoke"                        { $xml = "src\test\resources\smoke.xml" }
+        "regression"                   { $xml = "src\test\resources\regression.xml" }
+        "dual-route"                   { $xml = "src\test\resources\dual-route-booking.xml" }
+        "return-search-full"           { $xml = "src\test\resources\return-flight-full-payment.xml" }
+        "return-july2027-installments" { $xml = "src\test\resources\return-july2027-installments.xml" }
+        "return-search"                { $xml = "src\test\resources\return-flight-search.xml" }
+        default                        { $xml = "src\test\resources\ci-health.xml"; $choice = "ci-health" }
+      }
+      Write-Host "Running suite=$choice xml=$xml branch=$branch"
+      if (-not (Test-Path $xml)) { throw "Suite XML not found: $xml" }
+      $args = @{ SuiteXml = $xml }
+      if ("${{ parameters.skipAppiumStart }}" -eq "True") { $args.SkipAppiumStart = $true }
+      if ($env:LOGIN_EMAIL) { Write-Host "Using LOGIN_EMAIL from pipeline variables" }
+      & .\scripts\ci-run.ps1 @args
+      exit $LASTEXITCODE
+    displayName: Run Appium suite
+    env:
+      LOGIN_EMAIL: $(LOGIN_EMAIL)
+      LOGIN_PASSWORD: $(LOGIN_PASSWORD)
+      DEVICE_UDID: $(DEVICE_UDID)
+      APPIUM_SERVER_URL: $(APPIUM_SERVER_URL)
+
+  - task: PublishTestResults@2
+    displayName: Publish Surefire results
+    condition: always()
+    inputs:
+      testResultsFormat: JUnit
+      testResultsFiles: "**/surefire-reports/TEST-*.xml"
+      mergeTestResults: true
+      failTaskOnFailedTests: false
+
+  - task: PublishBuildArtifacts@1
+    displayName: Upload reports and screenshots
+    condition: always()
+    inputs:
+      PathtoPublish: reports
+      ArtifactName: travelhouse-reports
+      publishLocation: Container
+
+  - task: PublishBuildArtifacts@1
+    displayName: Upload screenshots
+    condition: always()
+    inputs:
+      PathtoPublish: screenshots
+      ArtifactName: travelhouse-screenshots
+      publishLocation: Container

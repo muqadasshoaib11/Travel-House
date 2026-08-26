@@ -100,11 +100,7 @@ public class HomePage {
                                     com.travelhouse.config.ConfigReader.get("app.package", "com.travelhouse.uk.app"),
                                     "-c", "android.intent.category.LAUNCHER", "1")));
         }
-        try {
-            Thread.sleep(1500);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // No fixed sleep after bring-to-foreground
     }
 
     public void openHomeTab() {
@@ -226,11 +222,7 @@ public class HomePage {
     }
 
     private static void pause(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // No fixed sleeps — rely on explicit waits for UI state.
     }
 
     public void tapOneWay() {
@@ -285,7 +277,121 @@ public class HomePage {
         tapRequired(goingTo, "Going to");
     }
 
+    /**
+     * Picks the seeded recent search London–Islamabad for 2–30 Mar 2027
+     * (same approach as the Playwright installment chunk — avoids calendar navigation).
+     */
+    public void chooseExactRecentSearch(String fromCity, String toCity, String dateRangeHint) {
+        openHomeTab();
+        scrollToFlightSearchForm();
+        boolean opened = false;
+        for (int attempt = 1; attempt <= 3 && !opened; attempt++) {
+            UiHelper.tapByDescContains("Going to");
+            long deadline = System.currentTimeMillis() + 7_000L;
+            while (System.currentTimeMillis() < deadline) {
+                if (!driver.findElements(AppiumBy.androidUIAutomator(
+                        "new UiSelector().descriptionContains(\"" + dateRangeHint + "\")")).isEmpty()) {
+                    opened = true;
+                    break;
+                }
+            }
+        }
+        Assert.assertTrue(opened, "Recent-search page did not open after 3 attempts");
+
+        List<WebElement> candidates = driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"" + dateRangeHint + "\")"));
+        WebElement recent = null;
+        for (WebElement candidate : candidates) {
+            String label = safeDesc(candidate);
+            if (label.contains(fromCity) && label.contains(toCity)) {
+                recent = candidate;
+                break;
+            }
+        }
+        Assert.assertNotNull(recent,
+                "Exact recent search unavailable. Seed " + fromCity + "–" + toCity
+                        + ", " + dateRangeHint + " once before running the suite.");
+        recent.click();
+        Assert.assertTrue(
+                UiHelper.waitForDescContains("Going to", 8)
+                        && UiHelper.waitForDescContains(toCity, 8),
+                "Home should show Going to " + toCity + " after recent search");
+    }
+
+    /**
+     * Search Flight until Cheapest/Fastest results appear (full-payment path).
+     */
+    public void searchForFullPayment() {
+        scrollToFlightSearchForm();
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            tapSearchFlight();
+            long deadline = System.currentTimeMillis() + 120_000L;
+            while (System.currentTimeMillis() < deadline) {
+                if (!driver.findElements(AppiumBy.accessibilityId("Cheapest")).isEmpty()
+                        || UiHelper.isDescPresent("Cheapest")) {
+                    return;
+                }
+                if (UiHelper.isDescPresent("unable to process")) {
+                    UiHelper.tapByDesc("OK");
+                    UiHelper.waitForDesc("Search Flight", 15);
+                    break;
+                }
+            }
+        }
+        throw new IllegalStateException(
+                "Flight search did not show Cheapest/Fastest after 3 attempts");
+    }
+
+    /**
+     * Search Flight until Pay in Installment is ready (retry on backend error).
+     */
+    public void searchUntilPayInInstallment() {
+        scrollToFlightSearchForm();
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            tapSearchFlight();
+            long deadline = System.currentTimeMillis() + 120_000L;
+            while (System.currentTimeMillis() < deadline) {
+                if (!driver.findElements(AppiumBy.accessibilityId("Pay in Installment")).isEmpty()
+                        || UiHelper.isDescPresent("Pay in Installment")) {
+                    UiHelper.tapByDesc("Pay in Installment");
+                    UiHelper.tapByDescContains("Pay in Installment");
+                    return;
+                }
+                if (UiHelper.isDescPresent("unable to process")) {
+                    UiHelper.tapByDesc("OK");
+                    UiHelper.waitForDesc("Search Flight", 15);
+                    break;
+                }
+            }
+        }
+        throw new IllegalStateException(
+                "Flight search did not reach Pay in Installment after 3 attempts");
+    }
+
+    private static String safeDesc(WebElement el) {
+        try {
+            String d = el.getAttribute("contentDescription");
+            return d == null ? "" : d.trim();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     public void openDeparture() {
+        // Prefer date field "Departure\n2026-08-09" over bare "Departure" tab inside the picker
+        List<WebElement> candidates = driver.findElements(
+                AppiumBy.androidUIAutomator("new UiSelector().descriptionContains(\"Departure\")"));
+        for (WebElement el : candidates) {
+            try {
+                String desc = el.getAttribute("contentDescription");
+                if (desc != null && desc.contains("\n") && desc.length() > "Departure".length()) {
+                    el.click();
+                    return;
+                }
+            } catch (Exception ignored) {
+                // try next
+            }
+        }
         tapRequired(departure, "Departure");
     }
 
@@ -312,7 +418,59 @@ public class HomePage {
     }
 
     public void tapSearchFlight() {
-        tapRequired(searchFlight, "Search Flight");
+        // After date/airport pickers the CTA can be off-screen or momentarily missing
+        for (int attempt = 0; attempt < 6; attempt++) {
+            List<WebElement> elements = driver.findElements(searchFlight);
+            if (elements.isEmpty()) {
+                elements = driver.findElements(AppiumBy.androidUIAutomator(
+                        "new UiSelector().descriptionContains(\"Search Flight\")"));
+            }
+            if (!elements.isEmpty()) {
+                try {
+                    if (elements.get(0).isDisplayed()) {
+                        elements.get(0).click();
+                        return;
+                    }
+                } catch (Exception ignored) {
+                    // try coordinate / next attempt
+                }
+                try {
+                    tapCenter(elements.get(0));
+                    return;
+                } catch (Exception ignored) {
+                    // continue
+                }
+            }
+            if (attempt % 2 == 0) {
+                GestureUtil.swipeUp();
+            } else {
+                GestureUtil.swipeDown();
+            }
+            pause(600);
+            if (attempt == 3) {
+                openHomeTab();
+                scrollToFlightSearchForm();
+            }
+        }
+        throw new IllegalStateException("Search Flight not found on Home");
+    }
+
+    private void tapCenter(WebElement element) {
+        org.openqa.selenium.Rectangle rect = element.getRect();
+        int x = rect.x + Math.max(1, rect.width / 2);
+        int y = rect.y + Math.max(1, rect.height / 2);
+        org.openqa.selenium.interactions.PointerInput finger =
+                new org.openqa.selenium.interactions.PointerInput(
+                        org.openqa.selenium.interactions.PointerInput.Kind.TOUCH, "finger");
+        org.openqa.selenium.interactions.Sequence tap =
+                new org.openqa.selenium.interactions.Sequence(finger, 1);
+        tap.addAction(finger.createPointerMove(java.time.Duration.ZERO,
+                org.openqa.selenium.interactions.PointerInput.Origin.viewport(), x, y));
+        tap.addAction(finger.createPointerDown(
+                org.openqa.selenium.interactions.PointerInput.MouseButton.LEFT.asArg()));
+        tap.addAction(finger.createPointerUp(
+                org.openqa.selenium.interactions.PointerInput.MouseButton.LEFT.asArg()));
+        driver.perform(java.util.Collections.singletonList(tap));
     }
 
     private void tapRequired(By locator, String label) {
