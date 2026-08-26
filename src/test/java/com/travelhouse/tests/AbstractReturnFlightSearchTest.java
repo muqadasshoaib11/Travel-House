@@ -99,68 +99,19 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         new AirportPickerPage().searchAndSelect(destinationQuery);
 
         boolean forceDates = Boolean.parseBoolean(TestDataReader.get("flight.force.date.selection", "true"));
-        boolean nearTerm = !TestDataReader.get("flight.departure.days.ahead", "").isBlank();
         if (forceDates) {
             ExtentReportManager.logInfo("Selecting travel dates " + departure + " → " + returnDate);
-            try {
-                home.openDeparture();
-                pause(1500);
-                new DatePickerPage().selectDepartureAndReturn(departure, returnDate);
-            } catch (RuntimeException e) {
-                if (nearTerm) {
-                    ExtentReportManager.logInfo("Date picker failed for near-term (" + e.getMessage()
-                            + ") — using app default dates if already within 2 months");
-                    // Dismiss picker if open
-                    try {
-                        DriverManager.getDriver().navigate().back();
-                    } catch (Exception ignored) {
-                        adbKeyEvent(4);
-                    }
-                    pause(800);
-                } else {
-                    throw e;
-                }
-            }
+            home.openDeparture();
+            pause(800);
+            new DatePickerPage().selectDepartureAndReturn(departure, returnDate);
         }
 
-        // Ensure Search Flight CTA is visible after calendar dismiss
         home.scrollToFlightSearchForm();
-        pause(800);
         home.tapSearchFlight();
-        pause(8000);
+        pause(6000);
 
         SearchResultsPage results = new SearchResultsPage();
-        if (UiHelper.waitForDescContains("Search Flight", 2) && !results.isResultsScreen()) {
-            home.scrollToFlightSearchForm();
-            home.tapSearchFlight();
-            pause(10000);
-        }
-
-        // Retry once if results never appear (common after Traveller back-navigation)
-        try {
-            results.waitForResults();
-        } catch (AssertionError | RuntimeException first) {
-            ExtentReportManager.logInfo("Results not ready (" + first.getMessage()
-                    + ") — recovering to Home and re-searching once");
-            openHomeReady(home);
-            home.scrollToFlightSearchForm();
-            home.tapReturn();
-            ensureOrigin(home, origin);
-            home.openGoingTo();
-            new AirportPickerPage().searchAndSelect(destinationQuery);
-            try {
-                home.openDeparture();
-                pause(1500);
-                new DatePickerPage().selectDepartureAndReturn(departure, returnDate);
-            } catch (RuntimeException ignored) {
-                // keep going
-            }
-            home.scrollToFlightSearchForm();
-            home.tapSearchFlight();
-            pause(12000);
-            results = new SearchResultsPage();
-            results.waitForResults();
-        }
+        results.waitForResults();
         Assert.assertTrue(results.hasResults(), "Return search results should display");
         results.validateAllListingsHaveRequiredFields(destination);
         ExtentReportManager.logInfo("Return results validated for " + origin + " → " + destination);
@@ -359,41 +310,29 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
     }
 
     protected void selectInstallmentPlanPath(String filterLabel, String planLabel) {
-        ensureResultsReadyForInstallment();
         SearchResultsPage results = new SearchResultsPage();
+        if (!results.isResultsScreen()) {
+            navigateBackToResults();
+            results = new SearchResultsPage();
+        }
         results.scrollResultsToTop();
         if (filterLabel.toLowerCase().contains("fast")) {
             results.applyFastestFilter();
         } else {
             results.applyCheapestFilter();
         }
-        if (!results.waitForPayInInstallmentVisible(12)) {
-            ExtentReportManager.logInfo("Installment CTA missing after " + filterLabel
-                    + " — recovering to results and retrying once");
-            ensureResultsReadyForInstallment();
-            results = new SearchResultsPage();
-            results.scrollResultsToTop();
-            if (filterLabel.toLowerCase().contains("fast")) {
-                results.applyFastestFilter();
-            } else {
-                results.applyCheapestFilter();
-            }
-        }
-        Assert.assertTrue(results.waitForPayInInstallmentVisible(15),
+        Assert.assertTrue(results.isPayInInstallmentVisible(),
                 "Pay in Installment must remain visible for Installments scenario");
 
         results.selectPayInInstallmentAtIndex(0);
-        pause(3000);
-        PermissionDialog.dismissAll(2);
-        ensureTravelHouseForeground();
+        pause(1500);
+        PermissionDialog.dismissAll(1);
 
         InstallmentPlansPage plansPage = new InstallmentPlansPage();
-        Assert.assertTrue(plansPage.waitUntilDisplayed(20),
+        Assert.assertTrue(plansPage.waitUntilDisplayed(15),
                 "Installment plans must show before selecting: " + planLabel);
         plansPage.selectPlan(planLabel);
-        ensureTravelHouseForeground();
-        plansPage.acceptTermsAndContinue(5);
-        ensureTravelHouseForeground();
+        plansPage.acceptTermsAndContinue(3);
         completeThroughMyTravellersAndStop();
         ExtentReportManager.logInfo(filterLabel + " + Installment plan [" + planLabel
                 + "] ended at My Travellers Continue (no Price Details)");

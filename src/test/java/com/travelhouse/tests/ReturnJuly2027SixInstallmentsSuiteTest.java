@@ -1,10 +1,7 @@
 package com.travelhouse.tests;
 
 import com.travelhouse.pages.InstallmentPlansPage;
-import com.travelhouse.pages.PriceDetailsPage;
-import com.travelhouse.pages.PriceSummaryPage;
 import com.travelhouse.pages.SearchResultsPage;
-import com.travelhouse.pages.TravellerInfoPage;
 import com.travelhouse.utils.ExtentReportManager;
 import com.travelhouse.utils.PermissionDialog;
 import com.travelhouse.utils.UiHelper;
@@ -51,18 +48,18 @@ public class ReturnJuly2027SixInstallmentsSuiteTest extends AbstractReturnFlight
             description = "Discover installment plans 1–6 (search ~6 months ahead)")
     public void step02_search_discoverSixPlans() {
         searchReturnForMonthsAhead(MAX_SEARCH_MONTHS);
-        Assert.assertTrue(new SearchResultsPage().waitForPayInInstallmentVisible(20),
-                "Blue Pay in Installment must appear for " + MAX_SEARCH_MONTHS + " months ahead");
+        Assert.assertTrue(new SearchResultsPage().isPayInInstallmentVisible(),
+                "Pay in Installment must appear for " + MAX_SEARCH_MONTHS + " months ahead");
 
         SearchResultsPage results = new SearchResultsPage();
         results.scrollResultsToTop();
         results.applyCheapestFilter();
         results.selectPayInInstallmentAtIndex(0);
-        pause(3000);
-        PermissionDialog.dismissAll(2);
+        pause(1500);
+        PermissionDialog.dismissAll(1);
 
         InstallmentPlansPage plansPage = new InstallmentPlansPage();
-        Assert.assertTrue(plansPage.waitUntilDisplayed(25),
+        Assert.assertTrue(plansPage.waitUntilDisplayed(15),
                 "Installment plans sheet must open after Pay in Installment");
         List<String> discovered = plansPage.discoverAvailablePlans();
         Assert.assertFalse(discovered.isEmpty(), "Expected installment plans");
@@ -144,16 +141,12 @@ public class ReturnJuly2027SixInstallmentsSuiteTest extends AbstractReturnFlight
 
     private void searchReturnWithDates(LocalDate departure, LocalDate returnDate) {
         performReturnSearchWithDates(ORIGIN, DESTINATION, DESTINATION_QUERY, departure, returnDate);
-        Assert.assertTrue(new SearchResultsPage().waitForPayInInstallmentVisible(20),
-                "Pay in Installment (blue) must be available for " + departure + " → " + returnDate);
+        Assert.assertTrue(new SearchResultsPage().isPayInInstallmentVisible(),
+                "Pay in Installment must be available for " + departure + " → " + returnDate);
     }
 
-    /**
-     * Pay in Installment → select plan → Price Summary (to reach travellers) →
-     * My Travellers fill + Continue → stop. Never opens or fills Price Details.
-     */
+    /** Installment → plan → My Travellers fill + Continue. Stops there (no Price Details). */
     private void bookInstallmentThroughMyTravellersOnly(String filterLabel, String planLabel) {
-        ensureResultsReadyForInstallment();
         SearchResultsPage results = new SearchResultsPage();
         results.scrollResultsToTop();
         if (filterLabel.toLowerCase(Locale.ENGLISH).contains("fast")) {
@@ -161,96 +154,23 @@ public class ReturnJuly2027SixInstallmentsSuiteTest extends AbstractReturnFlight
         } else {
             results.applyCheapestFilter();
         }
-        Assert.assertTrue(results.waitForPayInInstallmentVisible(15),
-                "Pay in Installment must remain visible before booking");
+        Assert.assertTrue(results.isPayInInstallmentVisible(),
+                "Pay in Installment must be visible before booking");
 
         results.selectPayInInstallmentAtIndex(0);
-        pause(3000);
-        PermissionDialog.dismissAll(2);
-        ensureTravelHouseForeground();
+        pause(1500);
+        PermissionDialog.dismissAll(1);
 
         InstallmentPlansPage plansPage = new InstallmentPlansPage();
-        Assert.assertTrue(plansPage.waitUntilDisplayed(25),
+        Assert.assertTrue(plansPage.waitUntilDisplayed(15),
                 "Installment plans must show before selecting: " + planLabel);
         plansPage.selectPlan(planLabel);
-        Assert.assertTrue(plansPage.acceptTermsAndContinue(5),
-                "Could not Continue after accepting Terms for plan: " + planLabel);
-        ensureTravelHouseForeground();
+        Assert.assertTrue(plansPage.acceptTermsAndContinue(3),
+                "Could not Continue after Terms for plan: " + planLabel);
 
-        advanceFromFareOrSummaryToMyTravellers();
-
-        TravellerInfoPage traveller = new TravellerInfoPage();
-        traveller.waitUntilVisible();
-        Assert.assertTrue(traveller.isMyTravellersScreen() || traveller.isDisplayed(),
-                "Should reach My Travellers / Traveller Information");
-        Assert.assertFalse(new PriceDetailsPage().isDisplayed(),
-                "Must not be on Price Details before completing My Travellers");
-
-        traveller.completeOnceSelectNameAndFill();
-        traveller.continueOnceAndEnd();
-
-        // End of automation: Continue was tapped; do not interact with Price Details
-        if (new PriceDetailsPage().isDisplayed()) {
-            ExtentReportManager.logInfo(
-                    "App may show Price Details after Continue — leaving without automating it");
-        }
+        completeThroughMyTravellersAndStop();
         ExtentReportManager.logInfo(filterLabel + " + plan [" + planLabel
-                + "] completed My Travellers (Continue) — flow ended (no Price Details)");
-    }
-
-    /**
-     * Reach My Travellers via itinerary / Price Summary CTAs only.
-     * Does not open Price Details.
-     */
-    private void advanceFromFareOrSummaryToMyTravellers() {
-        PriceSummaryPage summary = new PriceSummaryPage();
-        long deadline = System.currentTimeMillis() + 55_000L;
-        while (System.currentTimeMillis() < deadline) {
-            PermissionDialog.dismissAll(1);
-            if (UiHelper.waitForDescContains("Who's Going", 1)
-                    || UiHelper.waitForDescContains("My Travellers", 1)
-                    || UiHelper.waitForDescContains("Contact Information", 1)) {
-                return;
-            }
-            // Never tap into Price Details
-            if (new PriceDetailsPage().isDisplayed()
-                    && !summary.hasProceedCta()
-                    && !UiHelper.waitForDescContains("Who's Going", 1)) {
-                ExtentReportManager.logInfo("Saw Price Details unexpectedly — backing up");
-                try {
-                    com.travelhouse.base.DriverManager.getDriver().navigate().back();
-                } catch (Exception ignored) {
-                    adbKeyEvent(4);
-                }
-                pause(1000);
-                continue;
-            }
-            if (summary.hasProceedCta()) {
-                summary.proceedPastSummary();
-                pause(2500);
-                continue;
-            }
-            if (summary.isDisplayed() || summary.hasTotalPrice()
-                    || UiHelper.waitForDescContains("I accept", 1)
-                    || UiHelper.waitForDescContains("Total Price", 1)) {
-                summary.acceptTermsAndConditions();
-                pause(400);
-                summary.continueIfPresent();
-                pause(2500);
-                continue;
-            }
-            if (UiHelper.waitForDescContains("Book Now Pay Later", 1)
-                    || (UiHelper.waitForDescContains("month", 1)
-                    && UiHelper.waitForDescContains("I accept", 1))) {
-                new InstallmentPlansPage().acceptTermsAndContinue(2);
-            }
-            pause(1000);
-        }
-        Assert.assertTrue(
-                UiHelper.waitForDescContains("Who's Going", 3)
-                        || UiHelper.waitForDescContains("My Travellers", 3)
-                        || UiHelper.waitForDescContains("Contact Information", 2),
-                "Expected My Travellers after installment / summary steps (not Price Details)");
+                + "] ended at My Travellers Continue");
     }
 
     private void navigateBackToHomeForNewSearch() {

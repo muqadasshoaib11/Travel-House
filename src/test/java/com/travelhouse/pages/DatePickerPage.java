@@ -45,20 +45,23 @@ public class DatePickerPage {
     /** Selects departure + return days and taps Apply. */
     public void selectDepartureAndReturn(LocalDate departure, LocalDate returnDate) {
         waitUntilVisible();
-        // Ensure Departure tab active for first pick
         UiHelper.tapByDesc("Departure");
-        pause(400);
+        pause(300);
         tapDay(departure);
-        pause(800);
-        UiHelper.tapByDesc("Return");
         pause(400);
+        UiHelper.tapByDesc("Return");
+        pause(300);
         tapDay(returnDate);
-        pause(600);
+        pause(400);
         if (!UiHelper.tapByDesc("Apply") && !UiHelper.tapByDescContains("Apply")) {
             throw new IllegalStateException("Apply not found on date picker");
         }
+        pause(800);
+        if (UiHelper.waitForDescContains("Select dates", 2)) {
+            UiHelper.tapByDescContains("Apply");
+            pause(800);
+        }
         ExtentReportManager.logInfo("Selected dates " + departure + " → " + returnDate);
-        pause(1200);
     }
 
     public void tapDay(LocalDate day) {

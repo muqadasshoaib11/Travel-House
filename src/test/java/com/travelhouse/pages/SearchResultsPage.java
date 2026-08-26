@@ -216,31 +216,13 @@ public class SearchResultsPage {
     }
 
     public boolean isPayInInstallmentVisible() {
-        return waitForPayInInstallmentVisible(8);
+        return UiHelper.waitForDescContains("Pay in Installment", 5)
+                || UiHelper.waitForDescContains("Pay in Instalment", 2);
     }
 
-    /**
-     * Waits for the blue installment CTA, scrolling the list if filters just refreshed.
-     */
     public boolean waitForPayInInstallmentVisible(int seconds) {
-        long deadline = System.currentTimeMillis() + Math.max(1, seconds) * 1000L;
-        while (System.currentTimeMillis() < deadline) {
-            if (UiHelper.waitForDescContains("Pay in Installment", 1)
-                    || UiHelper.waitForDescContains("Pay in Instalment", 1)) {
-                return true;
-            }
-            // CTA may sit below the fold after Cheapest/Fastest re-sort
-            GestureUtil.swipeUp();
-            pause(600);
-            if (UiHelper.waitForDescContains("Pay in Installment", 1)
-                    || UiHelper.waitForDescContains("Pay in Instalment", 1)) {
-                return true;
-            }
-            GestureUtil.swipeDown();
-            pause(500);
-        }
-        return UiHelper.waitForDescContains("Pay in Installment", 1)
-                || UiHelper.waitForDescContains("Pay in Instalment", 1);
+        return UiHelper.waitForDescContains("Pay in Installment", Math.max(1, seconds))
+                || UiHelper.waitForDescContains("Pay in Instalment", 2);
     }
 
     /** Selects the Pay button at the given index (0-based) among visible priced flights. */
