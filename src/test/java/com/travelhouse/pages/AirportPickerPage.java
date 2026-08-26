@@ -6,6 +6,7 @@ import io.appium.java_client.AppiumBy;
 import io.appium.java_client.android.AndroidDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.support.ui.ExpectedConditions;
+import org.testng.Assert;
 
 import java.util.List;
 
@@ -43,5 +44,41 @@ public class AirportPickerPage {
             throw new IllegalStateException("No airport result matching: " + query);
         }
         matches.get(0).click();
+    }
+
+    /**
+     * Playwright full-payment flow: type city, tap result {@code IATA – City},
+     * then confirm Home shows {@code City – IATA}.
+     */
+    public void searchAndSelectByIata(String city, String iata) {
+        DriverManager.getWait().until(ExpectedConditions.presenceOfElementLocated(
+                AppiumBy.className("android.widget.EditText")));
+        List<WebElement> fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
+        Assert.assertFalse(fields.isEmpty(), "Airport search field missing");
+        WebElement search = fields.get(0);
+        search.click();
+        try {
+            search.clear();
+        } catch (Exception ignored) {
+            // Flutter
+        }
+        search.sendKeys(city);
+
+        String resultHint = iata + " – " + city;
+        Assert.assertTrue(UiHelper.waitForDescContains(resultHint, 30)
+                        || UiHelper.waitForDescContains(iata, 10),
+                "Airport result not found for " + resultHint);
+        if (!UiHelper.tapByDescContains(resultHint)) {
+            UiHelper.tapByDescContains(iata);
+        }
+        try {
+            driver.hideKeyboard();
+        } catch (Exception ignored) {
+            // ignore
+        }
+        String selectedHint = city + " – " + iata;
+        Assert.assertTrue(UiHelper.waitForDescContains(selectedHint, 15)
+                        || UiHelper.waitForDescContains(city, 8),
+                "Home should show selected destination " + selectedHint);
     }
 }

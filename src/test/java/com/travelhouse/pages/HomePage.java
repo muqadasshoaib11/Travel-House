@@ -100,11 +100,7 @@ public class HomePage {
                                     com.travelhouse.config.ConfigReader.get("app.package", "com.travelhouse.uk.app"),
                                     "-c", "android.intent.category.LAUNCHER", "1")));
         }
-        try {
-            Thread.sleep(1500);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // No fixed sleep after bring-to-foreground
     }
 
     public void openHomeTab() {
@@ -226,11 +222,7 @@ public class HomePage {
     }
 
     private static void pause(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // No fixed sleeps — rely on explicit waits for UI state.
     }
 
     public void tapOneWay() {
@@ -283,6 +275,106 @@ public class HomePage {
 
     public void openGoingTo() {
         tapRequired(goingTo, "Going to");
+    }
+
+    /**
+     * Picks the seeded recent search London–Islamabad for 2–30 Mar 2027
+     * (same approach as the Playwright installment chunk — avoids calendar navigation).
+     */
+    public void chooseExactRecentSearch(String fromCity, String toCity, String dateRangeHint) {
+        openHomeTab();
+        scrollToFlightSearchForm();
+        boolean opened = false;
+        for (int attempt = 1; attempt <= 3 && !opened; attempt++) {
+            UiHelper.tapByDescContains("Going to");
+            long deadline = System.currentTimeMillis() + 7_000L;
+            while (System.currentTimeMillis() < deadline) {
+                if (!driver.findElements(AppiumBy.androidUIAutomator(
+                        "new UiSelector().descriptionContains(\"" + dateRangeHint + "\")")).isEmpty()) {
+                    opened = true;
+                    break;
+                }
+            }
+        }
+        Assert.assertTrue(opened, "Recent-search page did not open after 3 attempts");
+
+        List<WebElement> candidates = driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"" + dateRangeHint + "\")"));
+        WebElement recent = null;
+        for (WebElement candidate : candidates) {
+            String label = safeDesc(candidate);
+            if (label.contains(fromCity) && label.contains(toCity)) {
+                recent = candidate;
+                break;
+            }
+        }
+        Assert.assertNotNull(recent,
+                "Exact recent search unavailable. Seed " + fromCity + "–" + toCity
+                        + ", " + dateRangeHint + " once before running the suite.");
+        recent.click();
+        Assert.assertTrue(
+                UiHelper.waitForDescContains("Going to", 8)
+                        && UiHelper.waitForDescContains(toCity, 8),
+                "Home should show Going to " + toCity + " after recent search");
+    }
+
+    /**
+     * Search Flight until Cheapest/Fastest results appear (full-payment path).
+     */
+    public void searchForFullPayment() {
+        scrollToFlightSearchForm();
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            tapSearchFlight();
+            long deadline = System.currentTimeMillis() + 120_000L;
+            while (System.currentTimeMillis() < deadline) {
+                if (!driver.findElements(AppiumBy.accessibilityId("Cheapest")).isEmpty()
+                        || UiHelper.isDescPresent("Cheapest")) {
+                    return;
+                }
+                if (UiHelper.isDescPresent("unable to process")) {
+                    UiHelper.tapByDesc("OK");
+                    UiHelper.waitForDesc("Search Flight", 15);
+                    break;
+                }
+            }
+        }
+        throw new IllegalStateException(
+                "Flight search did not show Cheapest/Fastest after 3 attempts");
+    }
+
+    /**
+     * Search Flight until Pay in Installment is ready (retry on backend error).
+     */
+    public void searchUntilPayInInstallment() {
+        scrollToFlightSearchForm();
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            tapSearchFlight();
+            long deadline = System.currentTimeMillis() + 120_000L;
+            while (System.currentTimeMillis() < deadline) {
+                if (!driver.findElements(AppiumBy.accessibilityId("Pay in Installment")).isEmpty()
+                        || UiHelper.isDescPresent("Pay in Installment")) {
+                    UiHelper.tapByDesc("Pay in Installment");
+                    UiHelper.tapByDescContains("Pay in Installment");
+                    return;
+                }
+                if (UiHelper.isDescPresent("unable to process")) {
+                    UiHelper.tapByDesc("OK");
+                    UiHelper.waitForDesc("Search Flight", 15);
+                    break;
+                }
+            }
+        }
+        throw new IllegalStateException(
+                "Flight search did not reach Pay in Installment after 3 attempts");
+    }
+
+    private static String safeDesc(WebElement el) {
+        try {
+            String d = el.getAttribute("contentDescription");
+            return d == null ? "" : d.trim();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     public void openDeparture() {

@@ -1,11 +1,11 @@
 <!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
-<suite name="Travel House Return Flight Search — Full Payment" verbose="1" parallel="false">
+<suite name="Travel House Full Payment — Complete Script" verbose="1" parallel="false">
     <listeners>
         <listener class-name="com.travelhouse.utils.TestListener"/>
     </listeners>
 
-    <!-- Scenario A: near-term dates, Cheapest + Fastest Full Payment -->
-    <test name="Return Search Full Payment Cheapest Fastest">
+    <!-- Jeddah Cheapest + Islamabad Fastest + Dammam One Way Fastest -->
+    <test name="Full Payment Complete Flow">
         <classes>
             <class name="com.travelhouse.tests.ReturnFlightFullPaymentSuiteTest"/>
         </classes>

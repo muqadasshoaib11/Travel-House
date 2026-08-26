@@ -49,9 +49,9 @@ public class TravellerInfoPage {
 
     public void waitUntilVisible() {
         Assert.assertTrue(
-                UiHelper.waitForDescContains("Who's Going", 25)
-                        || UiHelper.waitForDescContains("My Travellers", 10)
-                        || UiHelper.waitForDescContains("Contact Information", 10)
+                UiHelper.waitForDescContains("Who's Going", 12)
+                        || UiHelper.waitForDescContains("My Travellers", 4)
+                        || UiHelper.waitForDescContains("Contact Information", 4)
                         || isDisplayed(),
                 "Traveller Information / My Travellers screen should be visible");
     }
@@ -77,11 +77,19 @@ public class TravellerInfoPage {
     }
 
     public void selectTravellerFromDropdown() {
+        String savedName = TestDataReader.get("traveller.saved.name", "Muqadas Shoaib");
         boolean opened = UiHelper.tapByDescContains("Please Select a Saved Traveller")
                 || UiHelper.tapByDescContains("My Travellers")
                 || UiHelper.tapByDescContains("Select a Saved Traveller")
                 || UiHelper.tapByDescContains("Adult");
         pause(1500);
+
+        if (UiHelper.tapByDesc(savedName) || UiHelper.tapByDescContains(savedName)) {
+            System.out.println("[Traveller] Selected saved traveller: " + savedName);
+            pause(1500);
+            dismissOverlayIfOpen();
+            return;
+        }
 
         List<WebElement> options = driver.findElements(AppiumBy.androidUIAutomator(
                 "new UiSelector().clickable(true)"));
@@ -96,7 +104,7 @@ public class TravellerInfoPage {
                     || desc.contains("Who's") || desc.contains("Select")) {
                 continue;
             }
-            if (desc.contains(" ") || Character.isLetter(desc.charAt(0))) {
+            if (desc.contains(savedName) || desc.contains(" ") || Character.isLetter(desc.charAt(0))) {
                 System.out.println("[Traveller] Selected from dropdown: " + desc);
                 option.click();
                 selected = true;
@@ -126,8 +134,16 @@ public class TravellerInfoPage {
         pause(600);
     }
 
-    /** Taps Continue once and ends the automated flow — does not drive Price Details. */
+    /** Taps Continue once and waits for navigation — no second fill pass. */
     public void continueOnceAndEnd() {
+        continueThroughSummaryOnceAndStop();
+    }
+
+    /**
+     * My Travellers Continue → verify Summary → Continue once → stop
+     * (matches Playwright installment chunk).
+     */
+    public void continueThroughSummaryOnceAndStop() {
         dismissOverlayIfOpen();
         GestureUtil.swipeUp();
         pause(500);
@@ -138,8 +154,27 @@ public class TravellerInfoPage {
         }
         Assert.assertFalse(continueBtns.isEmpty(), "Continue button not found on Traveller screen");
         tapCenterSafe(continueBtns.get(0));
-        pause(4000);
+        pause(1500);
         dismissOverlayIfOpen();
+
+        Assert.assertTrue(
+                UiHelper.waitForDescContains("Summary", 30)
+                        || UiHelper.waitForDescContains("Price Summary", 5)
+                        || new PriceSummaryPage().isDisplayed()
+                        || new PriceSummaryPage().hasTotalPrice(),
+                "Summary screen did not appear after My Travellers Continue");
+
+        List<WebElement> summaryContinue = driver.findElements(AppiumBy.accessibilityId("Continue"));
+        if (summaryContinue.isEmpty()) {
+            summaryContinue = driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionContains(\"Continue\")"));
+        }
+        if (!summaryContinue.isEmpty()) {
+            tapCenterSafe(summaryContinue.get(0));
+            pause(1000);
+            dismissOverlayIfOpen();
+        }
+        System.out.println("[Traveller] Stopped after Summary Continue (no further payment steps)");
     }
 
     /**
@@ -226,7 +261,7 @@ public class TravellerInfoPage {
 
         boolean expanded = UiHelper.tapByDescContains("Add Special Request")
                 || UiHelper.tapByDescContains("Special Request");
-        pause(1500);
+        pause(600);
         if (expanded) {
             System.out.println("[Traveller] Opened Special Requests section");
         } else {
@@ -237,23 +272,33 @@ public class TravellerInfoPage {
             pause(1000);
         }
 
-        String seat = TestDataReader.get("traveller.seat.preference", "Window");
-        String meal = TestDataReader.get("traveller.meal.request", "Halal");
-        String service = TestDataReader.get("traveller.special.service", "No Special Service Requested");
+        String seat = TestDataReader.get("traveller.seat.preference", "Cot");
+        String meal = TestDataReader.get("traveller.meal.request", "Fruit Meal");
+        String service = TestDataReader.get("traveller.special.service", "Blind Passenger");
 
+        // Playwright chunk opens from current labels: Any / Any meal / No Special Service Requested
         Assert.assertTrue(
-                selectDropdownWithRetry("Seat Preference", seat, List.of("Window", "Aisle", "Exit Seat", "Any", "Middle")),
-                "Seat Preference dropdown must be selected");
-        if (!UiHelper.waitForDescContains("Meal Request", 2)) {
+                selectDropdownWithRetry("Any", seat,
+                        List.of("Cot", "Code", "Window", "Aisle", "Exit Seat", "Any", "Middle"))
+                        || selectDropdownWithRetry("Seat Preference", seat,
+                        List.of("Cot", "Code", "Window", "Aisle", "Exit Seat", "Any", "Middle")),
+                "Seat Preference dropdown must be selected (Cot on current build)");
+        if (!UiHelper.waitForDescContains("Meal Request", 2)
+                && !UiHelper.waitForDescContains("Any meal", 1)) {
             UiHelper.tapByDescContains("Add Special Request");
-            pause(800);
+            pause(500);
         }
         Assert.assertTrue(
-                selectDropdownWithRetry("Meal Request", meal, List.of("Halal", "Vegetarian", "Gluten Free", "Vegan", "Any")),
+                selectDropdownWithRetry("Any meal", meal,
+                        List.of("Fruit Meal", "Halal", "Vegetarian", "Gluten Free", "Vegan", "Any"))
+                        || selectDropdownWithRetry("Meal Request", meal,
+                        List.of("Fruit Meal", "Halal", "Vegetarian", "Gluten Free", "Vegan", "Any")),
                 "Meal Request dropdown must be selected");
         Assert.assertTrue(
-                selectDropdownWithRetry("Special Service", service,
-                        List.of("No Special Service Requested", "Wheelchair", "Bassinet", "Extra Legroom")),
+                selectDropdownWithRetry("No Special Service Requested", service,
+                        List.of("Blind Passenger", "No Special Service Requested", "Wheelchair", "Bassinet"))
+                        || selectDropdownWithRetry("Special Service", service,
+                        List.of("Blind Passenger", "No Special Service Requested", "Wheelchair", "Bassinet")),
                 "Special Service dropdown must be selected");
 
         dismissOverlayIfOpen();
@@ -268,15 +313,51 @@ public class TravellerInfoPage {
     }
 
     public void fillFrequentFlyer() {
-        String ff = TestDataReader.get("traveller.frequent.flyer", "PK123456789");
+        String ff = TestDataReader.get("traveller.frequent.flyer", "Muqadas");
         GestureUtil.swipeUp();
-        pause(400);
+        pause(300);
 
-        if (UiHelper.waitForDescContains("Frequent Flyer", 2)) {
-            System.out.println("[Traveller] Frequent Flyer section visible (value=" + ff + ")");
-        } else {
-            System.out.println("[Traveller] Frequent Flyer field not found — skipped if not on this build");
+        if (!UiHelper.waitForDescContains("Frequent Flyer", 2)) {
+            System.out.println("[Traveller] Frequent Flyer section not found — skipped");
+            return;
         }
+        List<WebElement> fields = driver.findElements(AppiumBy.className("android.widget.EditText"));
+        for (WebElement field : fields) {
+            try {
+                String hint = "";
+                try {
+                    hint = String.valueOf(field.getAttribute("contentDescription"));
+                } catch (Exception ignored) {
+                    // ignore
+                }
+                String text = field.getText() == null ? "" : field.getText();
+                if (hint.toLowerCase().contains("frequent") || hint.toLowerCase().contains("flyer")
+                        || (text.isBlank() && hint.toLowerCase().contains("flyer"))) {
+                    typeIntoField(field, ff);
+                    System.out.println("[Traveller] Frequent Flyer set to: " + ff);
+                    hideKeyboardQuietly();
+                    return;
+                }
+            } catch (Exception ignored) {
+                // next
+            }
+        }
+        // Fallback: last empty EditText in view after Frequent Flyer label
+        for (int i = fields.size() - 1; i >= 0; i--) {
+            WebElement field = fields.get(i);
+            try {
+                String text = field.getText() == null ? "" : field.getText().trim();
+                if (text.isBlank() || text.equalsIgnoreCase(ff)) {
+                    typeIntoField(field, ff);
+                    System.out.println("[Traveller] Frequent Flyer (fallback field) set to: " + ff);
+                    hideKeyboardQuietly();
+                    return;
+                }
+            } catch (Exception ignored) {
+                // next
+            }
+        }
+        System.out.println("[Traveller] Frequent Flyer field not typed — value expected=" + ff);
         dismissOverlayIfOpen();
     }
 
@@ -334,12 +415,20 @@ public class TravellerInfoPage {
 
         GestureUtil.swipeUp();
         pause(400);
-        String how = TestDataReader.get("traveller.how.to.contact", "Any (Phone + Email)");
-        String when = TestDataReader.get("traveller.contact.time", "Any Time");
-        selectDropdownWithRetry("How to Contact", how,
-                List.of("Any (Phone + Email)", "Phone", "Email", "WhatsApp"));
-        selectDropdownWithRetry("Contact Time", when,
-                List.of("Any Time", "Morning", "Afternoon", "Evening"));
+        String how = TestDataReader.get("traveller.how.to.contact", "Phone");
+        String when = TestDataReader.get("traveller.contact.time", "09:00 to 12:00");
+        if (!selectDropdownWithRetry("How to Contact", how,
+                List.of("Phone", "Any (Phone + Email)", "Email", "WhatsApp"))) {
+            selectDropdownWithRetry("Any (Phone + Email)", how,
+                    List.of("Phone", "Any (Phone + Email)", "Email", "WhatsApp"));
+        }
+        if (!selectDropdownWithRetry("Contact Time", when,
+                List.of("09:00 to 12:00", "9:00-12:00", "9:00 – 12:00", "09:00-12:00",
+                        "9:00", "Morning", "Any Time"))) {
+            selectDropdownWithRetry("Any Time", when,
+                    List.of("09:00 to 12:00", "9:00-12:00", "9:00 – 12:00", "09:00-12:00",
+                            "9:00", "Morning", "Any Time"));
+        }
     }
 
     private void selectCountryCodeUnitedKingdom() {
@@ -658,7 +747,8 @@ public class TravellerInfoPage {
         }
 
         boolean seatLike = lower.contains("seat") || lower.contains("window") || lower.contains("aisle")
-                || lower.contains("middle") || lower.equals("any");
+                || lower.contains("middle") || lower.contains("cot") || lower.contains("code")
+                || lower.equals("any");
         boolean mealLike = lower.contains("meal") || lower.contains("vegetarian") || lower.contains("halal")
                 || lower.contains("vegan") || lower.contains("gluten") || lower.contains("kosher");
         boolean serviceLike = lower.contains("service") || lower.contains("wheelchair")
@@ -906,10 +996,6 @@ public class TravellerInfoPage {
     }
 
     private static void pause(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // No fixed sleeps — rely on explicit waits for UI state.
     }
 }

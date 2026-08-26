@@ -7,6 +7,7 @@ import com.travelhouse.utils.UiHelper;
 import io.appium.java_client.AppiumBy;
 import io.appium.java_client.android.AndroidDriver;
 import org.openqa.selenium.WebElement;
+import org.testng.Assert;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -40,6 +41,43 @@ public class DatePickerPage {
                 && !UiHelper.waitForDescContains("Apply", 3)) {
             throw new IllegalStateException("Date picker (Select dates) not visible");
         }
+    }
+
+    /**
+     * Selects dates by accessibility labels from the Playwright full-payment script
+     * (e.g. {@code Wed, 23 September 2026}).
+     */
+    public void selectByDayLabels(String departureLabel, String returnLabel) {
+        waitUntilVisible();
+        scrollIntoViewAndTap(departureLabel);
+        if (returnLabel != null && !returnLabel.isBlank()) {
+            scrollIntoViewAndTap(returnLabel);
+        }
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            UiHelper.tapByDesc("Apply");
+            UiHelper.tapByDescContains("Apply");
+            if (UiHelper.waitForDesc("Search Flight", 5) || !isDisplayed()) {
+                ExtentReportManager.logInfo("Date labels applied: " + departureLabel
+                        + (returnLabel == null ? "" : " → " + returnLabel));
+                return;
+            }
+        }
+        throw new IllegalStateException("Date picker did not close after Apply");
+    }
+
+    private void scrollIntoViewAndTap(String label) {
+        String escaped = escape(label);
+        try {
+            driver.findElement(AppiumBy.androidUIAutomator(
+                    "new UiScrollable(new UiSelector().scrollable(true)).scrollIntoView("
+                            + "new UiSelector().descriptionContains(\"" + escaped + "\"))"));
+        } catch (Exception ignored) {
+            // fall through to tap attempts
+        }
+        Assert.assertTrue(
+                UiHelper.waitForDescContains(label, 30)
+                        && (UiHelper.tapByDesc(label) || UiHelper.tapByDescContains(label)),
+                "Could not select date label: " + label);
     }
 
     /** Selects departure + return days and taps Apply. */
