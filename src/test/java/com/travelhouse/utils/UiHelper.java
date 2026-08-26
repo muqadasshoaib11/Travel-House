@@ -6,18 +6,11 @@ import io.appium.java_client.android.AndroidDriver;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebElement;
 
+import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 public final class UiHelper {
-
-    private static final int FIND_TIMEOUT_SECONDS = 12;
 
     private UiHelper() {
     }
@@ -37,7 +30,16 @@ public final class UiHelper {
     }
 
     public static List<WebElement> findByDesc(String accessibilityId) {
-        return findElementsSafe(desc(accessibilityId));
+        return findElementsNow(desc(accessibilityId));
+    }
+
+    /** Instant presence check — no timeout burn when the node is missing. */
+    public static boolean isDescPresent(String fragment) {
+        return !findElementsNow(descContains(fragment)).isEmpty();
+    }
+
+    public static boolean isDescExactPresent(String accessibilityId) {
+        return !findElementsNow(desc(accessibilityId)).isEmpty();
     }
 
     public static boolean tapByDesc(String accessibilityId) {
@@ -55,7 +57,7 @@ public final class UiHelper {
 
     public static boolean tapByDescContains(String fragment) {
         try {
-            List<WebElement> elements = findElementsSafe(descContains(fragment));
+            List<WebElement> elements = findElementsNow(descContains(fragment));
             if (!elements.isEmpty()) {
                 elements.get(0).click();
                 return true;
@@ -68,7 +70,7 @@ public final class UiHelper {
 
     public static boolean tapByTextContains(String fragment) {
         try {
-            List<WebElement> elements = findElementsSafe(textContains(fragment));
+            List<WebElement> elements = findElementsNow(textContains(fragment));
             if (!elements.isEmpty()) {
                 elements.get(0).click();
                 return true;
@@ -81,7 +83,7 @@ public final class UiHelper {
 
     public static void typeInEditText(String text) {
         AndroidDriver driver = DriverManager.getDriver();
-        List<WebElement> fields = findElementsSafe(AppiumBy.className("android.widget.EditText"));
+        List<WebElement> fields = findElementsNow(AppiumBy.className("android.widget.EditText"));
         if (fields.isEmpty()) {
             throw new IllegalStateException("No EditText found to type into");
         }
@@ -91,51 +93,51 @@ public final class UiHelper {
         field.sendKeys(text);
     }
 
+    /**
+     * Wait until a description appears. Uses zero implicit wait so missing nodes
+     * fail fast each poll instead of burning the driver implicit timeout.
+     */
     public static boolean waitForDescContains(String fragment, int seconds) {
-        long deadline = System.currentTimeMillis() + Math.max(1, seconds) * 1000L;
-        while (System.currentTimeMillis() < deadline) {
-            List<WebElement> found = findElementsSafe(descContains(fragment));
-            try {
-                if (!found.isEmpty() && found.get(0).isDisplayed()) {
-                    return true;
-                }
-            } catch (Exception ignored) {
-                // stale element
+        long deadline = System.currentTimeMillis() + Math.max(0, seconds) * 1000L;
+        do {
+            if (isDescPresent(fragment)) {
+                return true;
+            }
+            if (seconds <= 0) {
+                return false;
             }
             try {
-                Thread.sleep(400);
+                Thread.sleep(50);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
             }
-        }
+        } while (System.currentTimeMillis() < deadline);
         return false;
     }
 
     public static boolean waitForDesc(String accessibilityId, int seconds) {
-        long deadline = System.currentTimeMillis() + Math.max(1, seconds) * 1000L;
-        while (System.currentTimeMillis() < deadline) {
-            List<WebElement> found = findElementsSafe(desc(accessibilityId));
-            try {
-                if (!found.isEmpty() && found.get(0).isDisplayed()) {
-                    return true;
-                }
-            } catch (Exception ignored) {
-                // stale
+        long deadline = System.currentTimeMillis() + Math.max(0, seconds) * 1000L;
+        do {
+            if (isDescExactPresent(accessibilityId)) {
+                return true;
+            }
+            if (seconds <= 0) {
+                return false;
             }
             try {
-                Thread.sleep(400);
+                Thread.sleep(50);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
             }
-        }
+        } while (System.currentTimeMillis() < deadline);
         return false;
     }
 
     public static String getPageSourceSafe() {
         try {
-            return callWithTimeout(15, () -> DriverManager.getDriver().getPageSource());
+            return DriverManager.getDriver().getPageSource();
         } catch (Exception e) {
             return "";
         }
@@ -143,7 +145,7 @@ public final class UiHelper {
 
     public static boolean isAnyDisplayed(By... locators) {
         for (By locator : locators) {
-            List<WebElement> found = findElementsSafe(locator);
+            List<WebElement> found = findElementsNow(locator);
             try {
                 if (!found.isEmpty() && found.get(0).isDisplayed()) {
                     return true;
@@ -155,34 +157,26 @@ public final class UiHelper {
         return false;
     }
 
+    /** findElements with implicit wait forced to 0 — missing UI returns immediately. */
     public static List<WebElement> findElementsSafe(By locator) {
+        return findElementsNow(locator);
+    }
+
+    public static List<WebElement> findElementsNow(By locator) {
+        AndroidDriver driver = DriverManager.getDriver();
+        Duration previous = driver.manage().timeouts().getImplicitWaitTimeout();
         try {
-            return callWithTimeout(FIND_TIMEOUT_SECONDS,
-                    () -> DriverManager.getDriver().findElements(locator));
-        } catch (TimeoutException e) {
-            // Do NOT force-stop UiAutomator2 here — that orphans the live Appium session.
-            System.out.println("[UiHelper] findElements timed out for " + locator);
-            return Collections.emptyList();
+            driver.manage().timeouts().implicitlyWait(Duration.ZERO);
+            return driver.findElements(locator);
         } catch (Exception e) {
             System.out.println("[UiHelper] findElements failed: " + e.getMessage());
             return Collections.emptyList();
-        }
-    }
-
-    private static <T> T callWithTimeout(int seconds, Callable<T> action) throws Exception {
-        ExecutorService pool = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "uihelper-timeout");
-            t.setDaemon(true);
-            return t;
-        });
-        Future<T> future = pool.submit(action);
-        try {
-            return future.get(seconds, TimeUnit.SECONDS);
-        } catch (TimeoutException e) {
-            future.cancel(true);
-            throw e;
         } finally {
-            pool.shutdownNow();
+            try {
+                driver.manage().timeouts().implicitlyWait(previous);
+            } catch (Exception ignored) {
+                // ignore
+            }
         }
     }
 

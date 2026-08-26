@@ -29,54 +29,49 @@ public class SearchResultsPage {
     }
 
     public void waitForResults() {
-        boolean ready = false;
-        for (int i = 0; i < 18; i++) {
-            if (isResultsScreen() && !findResultCards().isEmpty()) {
-                ready = true;
-                break;
-            }
-            // Still on Home search form — wait / retry scroll only after leaving Home
-            if (UiHelper.waitForDescContains("Search Flight", 1)
-                    && !UiHelper.waitForDescContains("Cheapest", 1)) {
-                pause(2000);
-                continue;
-            }
-            if (UiHelper.waitForDescContains("Cheapest", 3)
-                    || UiHelper.waitForDescContains("Fastest", 2)
-                    || UiHelper.waitForDescContains("Pay", 2)
-                    || UiHelper.waitForDescContains("£", 2)) {
-                pause(1500);
-                if (!findResultCards().isEmpty()) {
-                    ready = true;
-                    break;
-                }
-                GestureUtil.swipeUp();
-                pause(1000);
-            } else {
-                pause(2000);
-            }
+        // Flight search is network-bound — must wait for results chrome (pause() is a no-op).
+        if (UiHelper.waitForDescContains("Cheapest", 60)
+                || UiHelper.waitForDescContains("Fastest", 5)
+                || UiHelper.waitForDescContains("Pay in Installment", 5)
+                || UiHelper.waitForDescContains("Pay £", 5)) {
+            return;
         }
-        if (!ready) {
-            pause(3000);
-        }
+        // Still loading / empty — one more short poll for any Pay CTA on listings
+        UiHelper.waitForDescContains("Pay", 10);
     }
 
-    /** True when flight results chrome is visible (not the Home search form). */
+    /**
+     * True when flight results chrome is visible (Cheapest/Fastest filters).
+     * Do NOT treat bare "Pay" as results — Price Summary's "Proceed with payment"
+     * matches that and previously made navigateBackToResults stop too early.
+     */
     public boolean isResultsScreen() {
-        return UiHelper.waitForDescContains("Cheapest", 1)
-                || UiHelper.waitForDescContains("Fastest", 1)
-                || (!driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Pay\")")).isEmpty()
-                && driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Search Flight\")")).isEmpty());
+        if (isBookingSummaryOrTravellerScreen()) {
+            return false;
+        }
+        return UiHelper.isDescPresent("Cheapest")
+                || UiHelper.isDescPresent("Fastest")
+                || UiHelper.isDescPresent("Pay in Installment");
+    }
+
+    /** Post-results booking screens that must not be treated as search results. */
+    public boolean isBookingSummaryOrTravellerScreen() {
+        return UiHelper.isDescPresent("Proceed with payment")
+                || UiHelper.isDescPresent("Proceed With Query")
+                || UiHelper.isDescPresent("Price Summary")
+                || UiHelper.isDescPresent("Price Detail")
+                || UiHelper.isDescPresent("My Travellers")
+                || UiHelper.isDescPresent("Who's Going");
     }
 
     public boolean hasResults() {
         waitForResults();
-        return isResultsScreen() && (!findResultCards().isEmpty()
-                || !driver.findElements(AppiumBy.accessibilityId("Cheapest")).isEmpty()
-                || !driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Cheapest\")")).isEmpty());
+        if (isBookingSummaryOrTravellerScreen()) {
+            return false;
+        }
+        return isResultsScreen()
+                || UiHelper.isDescPresent("Pay in Installment")
+                || !findResultCards().isEmpty();
     }
 
     public int getResultCountEstimate() {
@@ -174,21 +169,64 @@ public class SearchResultsPage {
         }
         Assert.assertFalse(buttons.isEmpty(),
                 "Pay in Installment not found — departure must be ~2 months ahead");
-        WebElement target = buttons.get(Math.min(index % buttons.size(), buttons.size() - 1));
+        // Prefer on-screen mid/lower CTAs; skip off-screen or tiny stubs
+        List<WebElement> usable = new ArrayList<>();
+        for (WebElement el : buttons) {
+            Rectangle r = el.getRect();
+            if (r.height >= 40 && r.y >= 200 && r.y < 2200) {
+                usable.add(el);
+            }
+        }
+        if (usable.isEmpty()) {
+            usable = buttons;
+        }
+        WebElement target = usable.get(Math.min(index % usable.size(), usable.size() - 1));
         Rectangle rect = target.getRect();
         try {
             target.click();
         } catch (Exception ignored) {
-            adbTap(rect.x + rect.width / 2, rect.y + rect.height / 2);
+            // fall through
         }
-        Assert.assertTrue(waitUntilLeftResults(12),
+        if (waitUntilLeftResults(8)) {
+            ExtentReportManager.logInfo("Selected Pay in Installment on card index " + index);
+            return;
+        }
+        adbTap(rect.x + rect.width / 2, rect.y + rect.height / 2);
+        Assert.assertTrue(waitUntilLeftResults(10),
                 "Flight details should open after Pay in Installment index " + index);
         ExtentReportManager.logInfo("Selected Pay in Installment on card index " + index);
     }
 
     public boolean isPayInInstallmentVisible() {
-        return UiHelper.waitForDescContains("Pay in Installment", 3)
-                || UiHelper.waitForDescContains("Pay in Instalment", 2);
+        return waitForPayInInstallmentVisible(15);
+    }
+
+    public boolean waitForPayInInstallmentVisible(int seconds) {
+        scrollResultsToTop();
+        long deadline = System.currentTimeMillis() + Math.max(3, seconds) * 1000L;
+        while (System.currentTimeMillis() < deadline) {
+            if (payInInstallmentPresent()) {
+                return true;
+            }
+            GestureUtil.swipeUp();
+            if (payInInstallmentPresent()) {
+                return true;
+            }
+            GestureUtil.swipeDown();
+        }
+        scrollResultsToTop();
+        return payInInstallmentPresent();
+    }
+
+    private boolean payInInstallmentPresent() {
+        return UiHelper.isDescPresent("Pay in Installment")
+                || UiHelper.isDescPresent("Pay in Instalment")
+                || UiHelper.isDescPresent("Pay in Installments")
+                || UiHelper.isDescPresent("Pay in Instalments")
+                || !driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Pay in Install\")")).isEmpty()
+                || !driver.findElements(AppiumBy.androidUIAutomator(
+                "new UiSelector().descriptionContains(\"Pay in Instal\")")).isEmpty();
     }
 
     /** Selects the Pay button at the given index (0-based) among visible priced flights. */
@@ -198,6 +236,9 @@ public class SearchResultsPage {
         for (int swipe = 0; swipe < index; swipe++) {
             GestureUtil.swipeUp();
             pause(700);
+        }
+        if (index == 0 && tapPayButtonAndWait()) {
+            return;
         }
         List<WebElement> payButtons = driver.findElements(AppiumBy.androidUIAutomator(
                 "new UiSelector().descriptionContains(\"Pay\")"));
@@ -209,7 +250,7 @@ public class SearchResultsPage {
                     || lower.contains("pay in instalment")) {
                 continue;
             }
-            if (desc.contains("Pay") || desc.contains("£")) {
+            if (desc.contains("Pay") || desc.contains("£") || desc.contains("\u00a3")) {
                 usable.add(el);
             }
         }
@@ -219,10 +260,23 @@ public class SearchResultsPage {
         try {
             target.click();
         } catch (Exception ignored) {
-            adbTap(rect.x + rect.width / 2, rect.y + rect.height / 2);
+            // Flutter often needs coordinate taps
         }
-        Assert.assertTrue(waitUntilLeftResults(12),
-                "Flight details should open after selecting Pay index " + index);
+        if (waitUntilLeftResults(8)) {
+            return;
+        }
+        // Pink Pay CTA sits at bottom of card — try lower Y ratios + adb
+        for (double ratio : new double[]{0.92, 0.85, 0.75, 0.60}) {
+            tapAt(rect, ratio);
+            if (waitUntilLeftResults(6)) {
+                return;
+            }
+            adbTap(rect.x + rect.width / 2, rect.y + (int) (rect.height * ratio));
+            if (waitUntilLeftResults(6)) {
+                return;
+            }
+        }
+        Assert.fail("Flight details should open after selecting Pay index " + index);
     }
 
     /** Selects the first visible priced flight (Pay). */
@@ -293,9 +347,11 @@ public class SearchResultsPage {
 
     private void tapFilter(String name) {
         if (UiHelper.tapByDesc(name) || UiHelper.tapByDescContains(name)) {
-            pause(2500);
+            // filter re-sort — brief poll for Pay CTA
+            UiHelper.waitForDescContains("Pay", 5);
+        } else {
+            UiHelper.waitForDescContains("Pay", 3);
         }
-        UiHelper.waitForDescContains("Pay", 20);
     }
 
     /**
@@ -408,25 +464,58 @@ public class SearchResultsPage {
                     "new UiSelector().descriptionContains(\"Pay\").clickable(true)"));
             if (payButtons.isEmpty()) {
                 payButtons = driver.findElements(AppiumBy.androidUIAutomator(
-                        "new UiSelector().descriptionContains(\"Pay £\")"));
+                        "new UiSelector().descriptionContains(\"Pay\")"));
             }
-            if (!payButtons.isEmpty()) {
-                WebElement pay = payButtons.get(0);
+            WebElement pay = pickBestPayTarget(payButtons);
+            if (pay != null) {
                 Rectangle rect = pay.getRect();
-                pay.click();
-                if (waitUntilLeftResults(10)) {
+                System.out.println("[Results] Tapping Pay target h=" + rect.height + " y=" + rect.y
+                        + " desc=" + snippet(safeDesc(pay)));
+                try {
+                    pay.click();
+                } catch (Exception ignored) {
+                    // coordinate fallbacks below
+                }
+                if (waitUntilLeftResults(8)) {
                     return true;
                 }
-                adbTap(rect.x + rect.width / 2, rect.y + rect.height / 2);
-                return waitUntilLeftResults(10);
+                // Pink CTA is near the bottom of the flight card
+                for (double ratio : new double[]{0.92, 0.85, 0.78}) {
+                    adbTap(rect.x + rect.width / 2, rect.y + (int) (rect.height * ratio));
+                    if (waitUntilLeftResults(6)) {
+                        return true;
+                    }
+                }
             }
         } catch (Exception e) {
             System.out.println("[Results] Pay tap failed: " + e.getMessage());
         }
-        if (UiHelper.tapByDescContains("Pay £") || UiHelper.tapByDescContains("Pay")) {
-            return waitUntilLeftResults(10);
+        return UiHelper.tapByDescContains("Pay £") && waitUntilLeftResults(10);
+    }
+
+    /** Prefer a full-height flight card with Pay; skip clipped header stubs (h &lt; ~120). */
+    private WebElement pickBestPayTarget(List<WebElement> payButtons) {
+        WebElement best = null;
+        int bestHeight = 0;
+        for (WebElement el : payButtons) {
+            String lower = safeDesc(el).toLowerCase();
+            if (lower.contains("proceed") || lower.contains("pay in installment")
+                    || lower.contains("pay in instalment")) {
+                continue;
+            }
+            if (!lower.contains("pay") && !lower.contains("£") && !lower.contains("\u00a3")) {
+                continue;
+            }
+            Rectangle rect = el.getRect();
+            if (rect.height < 120) {
+                continue; // clipped stub above the first full card
+            }
+            if (rect.height > bestHeight) {
+                bestHeight = rect.height;
+                best = el;
+            }
         }
-        return false;
+        return best;
     }
 
     private boolean waitUntilLeftResults(int seconds) {
@@ -535,10 +624,6 @@ public class SearchResultsPage {
     }
 
     private static void pause(long ms) {
-        try {
-            Thread.sleep(ms);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // No fixed sleeps — rely on explicit waits for UI state.
     }
 }

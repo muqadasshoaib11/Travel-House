@@ -36,8 +36,7 @@ public final class DriverManager {
                 .readTimeout(Duration.ofSeconds(readTimeoutSec))
                 .connectionTimeout(Duration.ofSeconds(30));
         AndroidDriver created = new AndroidDriver(clientConfig, options);
-        created.manage().timeouts().implicitlyWait(
-                Duration.ofSeconds(ConfigReader.getInt("implicit.wait.seconds", 2)));
+        created.manage().timeouts().implicitlyWait(Duration.ZERO);
         driver = created;
         wait = new WebDriverWait(created,
                 Duration.ofSeconds(ConfigReader.getInt("explicit.wait.seconds", 20)));

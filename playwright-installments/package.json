@@ -1,0 +1,20 @@
+{
+  "name": "travel-house-android-automation",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "setup:android": "appium driver install uiautomator2",
+    "appium": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/start-appium.ps1",
+    "test": "playwright test",
+    "test:installments": "playwright test tests/installment-flows.spec.js",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.55.0",
+    "appium": "2.19.0",
+    "appium-uiautomator2-driver": "4.2.9",
+    "dotenv": "^17.2.1",
+    "webdriverio": "^9.19.2"
+  }
+}

@@ -229,13 +229,13 @@ public class InstallmentPlansPage {
         } catch (Exception ignored) {
             // ignore
         }
-        // 3) Coordinate: left of "I accept " label
+        // 3) Coordinate: unlabeled View immediately left of "I accept " (Playwright chunk uses x-45)
         try {
             List<WebElement> labels = driver.findElements(AppiumBy.androidUIAutomator(
                     "new UiSelector().descriptionContains(\"I accept\")"));
             if (!labels.isEmpty()) {
                 org.openqa.selenium.Rectangle r = labels.get(0).getRect();
-                int x = Math.max(20, r.x - 40);
+                int x = Math.max(20, r.x - 45);
                 int y = r.y + r.height / 2;
                 GestureUtil.tapAt(x, y);
                 pause(500);
@@ -316,6 +316,35 @@ public class InstallmentPlansPage {
         acceptTermsAndContinue(3);
     }
 
+    /**
+     * Second payment-terms sheet after Proceed: tap "Pay in N Installments",
+     * check native CheckBox if present, then Continue (Playwright installment chunk).
+     */
+    public void confirmPaymentTerms(int months) {
+        String payLabel = "Pay in " + months + " Installments";
+        UiHelper.tapByDesc(payLabel);
+        UiHelper.tapByDescContains(payLabel);
+        try {
+            List<WebElement> checkboxes = driver.findElements(
+                    AppiumBy.className("android.widget.CheckBox"));
+            for (WebElement box : checkboxes) {
+                if (!"true".equalsIgnoreCase(String.valueOf(box.getAttribute("checked")))) {
+                    box.click();
+                    break;
+                }
+            }
+        } catch (Exception ignored) {
+            acceptTermsIfPresent();
+        }
+        Assert.assertTrue(acceptTermsAndContinue(3),
+                "Second payment terms Continue failed for " + months + "-month plan");
+    }
+
+    /** Selects plan by month count using the stable "N month" fragment. */
+    public void selectPlanByMonths(int months) {
+        selectPlan(months + " month");
+    }
+
     private List<String> discoverPlanLabelsFromSource(String source) {
         List<String> found = new ArrayList<>();
         if (source == null || source.isBlank()) {
@@ -374,10 +403,6 @@ public class InstallmentPlansPage {
     }
 
     private static void pause(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // No fixed sleeps — rely on explicit waits for UI state.
     }
 }

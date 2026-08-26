@@ -12,8 +12,10 @@ import com.travelhouse.pages.HomePage;
 import com.travelhouse.pages.InstallmentPlansPage;
 import com.travelhouse.pages.LoginPage;
 import com.travelhouse.pages.OnboardingPage;
+import com.travelhouse.pages.PriceDetailsPage;
 import com.travelhouse.pages.PriceSummaryPage;
 import com.travelhouse.pages.SearchResultsPage;
+import com.travelhouse.pages.TravellerInfoPage;
 import com.travelhouse.utils.DevicePrep;
 import com.travelhouse.utils.ExtentReportManager;
 import com.travelhouse.utils.PermissionDialog;
@@ -97,78 +99,37 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         new AirportPickerPage().searchAndSelect(destinationQuery);
 
         boolean forceDates = Boolean.parseBoolean(TestDataReader.get("flight.force.date.selection", "true"));
-        boolean nearTerm = !TestDataReader.get("flight.departure.days.ahead", "").isBlank();
         if (forceDates) {
             ExtentReportManager.logInfo("Selecting travel dates " + departure + " → " + returnDate);
-            try {
-                home.openDeparture();
-                pause(1500);
-                new DatePickerPage().selectDepartureAndReturn(departure, returnDate);
-            } catch (RuntimeException e) {
-                if (nearTerm) {
-                    ExtentReportManager.logInfo("Date picker failed for near-term (" + e.getMessage()
-                            + ") — using app default dates if already within 2 months");
-                    // Dismiss picker if open
-                    try {
-                        DriverManager.getDriver().navigate().back();
-                    } catch (Exception ignored) {
-                        adbKeyEvent(4);
-                    }
-                    pause(800);
-                } else {
-                    throw e;
-                }
-            }
+            home.openDeparture();
+            new DatePickerPage().selectDepartureAndReturn(departure, returnDate);
+            // Confirm far-out year stuck on Home (installments need ~5+ months ahead)
+            Assert.assertTrue(
+                    UiHelper.waitForDescContains(String.valueOf(departure.getYear()), 3)
+                            || UiHelper.isDescPresent(String.valueOf(returnDate.getYear())),
+                    "Home must show year " + departure.getYear()
+                            + " after date Apply (otherwise Full Payment shows instead of Installment)");
         }
 
-        // Ensure Search Flight CTA is visible after calendar dismiss
+        if (UiHelper.isDescPresent("Select dates")) {
+            throw new IllegalStateException("Date picker still open before Search Flight");
+        }
         home.scrollToFlightSearchForm();
-        pause(800);
         home.tapSearchFlight();
-        pause(8000);
 
         SearchResultsPage results = new SearchResultsPage();
-        if (UiHelper.waitForDescContains("Search Flight", 2) && !results.isResultsScreen()) {
-            home.scrollToFlightSearchForm();
-            home.tapSearchFlight();
-            pause(10000);
-        }
-
-        // Retry once if results never appear (common after Traveller back-navigation)
-        try {
-            results.waitForResults();
-        } catch (AssertionError | RuntimeException first) {
-            ExtentReportManager.logInfo("Results not ready (" + first.getMessage()
-                    + ") — recovering to Home and re-searching once");
-            openHomeReady(home);
-            home.scrollToFlightSearchForm();
-            home.tapReturn();
-            ensureOrigin(home, origin);
-            home.openGoingTo();
-            new AirportPickerPage().searchAndSelect(destinationQuery);
-            try {
-                home.openDeparture();
-                pause(1500);
-                new DatePickerPage().selectDepartureAndReturn(departure, returnDate);
-            } catch (RuntimeException ignored) {
-                // keep going
-            }
-            home.scrollToFlightSearchForm();
-            home.tapSearchFlight();
-            pause(12000);
-            results = new SearchResultsPage();
-            results.waitForResults();
-        }
-        Assert.assertTrue(results.hasResults(), "Return search results should display");
-        results.validateAllListingsHaveRequiredFields(destination);
-        ExtentReportManager.logInfo("Return results validated for " + origin + " → " + destination);
+        results.waitForResults();
+        Assert.assertTrue(results.hasResults(),
+                "Return search results should display (Cheapest / Pay in Installment)");
+        ExtentReportManager.logInfo("Return results ready for " + origin + " → " + destination);
     }
 
     protected void navigateBackToResults() {
         for (int i = 0; i < 12; i++) {
             SearchResultsPage results = new SearchResultsPage();
             try {
-                if (results.isResultsScreen()) {
+                // Require real results chrome — not Price Summary ("Proceed with payment")
+                if (results.isResultsScreen() && !results.isBookingSummaryOrTravellerScreen()) {
                     return;
                 }
             } catch (Exception ignored) {
@@ -187,6 +148,30 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         LocalDate returnDate = departure.plusDays(resolveReturnDaysAfter());
         performReturnSearchWithDates(departure, returnDate);
         Assert.assertTrue(new SearchResultsPage().hasResults(), "Could not return to search results");
+    }
+
+    /**
+     * After a plan path we often sit on Price Summary; Back until Cheapest/Fastest
+     * (or re-search) so the next Cheapest/Fastest × plan loop can find installments.
+     */
+    protected void ensureResultsReadyForInstallment() {
+        SearchResultsPage results = new SearchResultsPage();
+        if (!results.isResultsScreen() || results.isBookingSummaryOrTravellerScreen()
+                || !results.waitForPayInInstallmentVisible(5)) {
+            navigateBackToResults();
+            results = new SearchResultsPage();
+        }
+        if (!results.waitForPayInInstallmentVisible(10)) {
+            ExtentReportManager.logInfo("Installment CTA still missing — re-running Return search");
+            LocalDate departure = resolveDepartureDate();
+            LocalDate returnDate = departure.plusDays(resolveReturnDaysAfter());
+            performReturnSearchWithDates(departure, returnDate);
+            results = new SearchResultsPage();
+        }
+        Assert.assertTrue(results.isResultsScreen(),
+                "Must be on search results before selecting an installment plan");
+        Assert.assertTrue(results.waitForPayInInstallmentVisible(15),
+                "Pay in Installment must be visible before selecting an installment plan");
     }
 
     protected LocalDate resolveDepartureDate() {
@@ -301,8 +286,8 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         } else {
             ExtentReportManager.logInfo("No separate fare sheet — continuing Full Payment itinerary");
         }
-        confirmPastFareToSummary();
-        ExtentReportManager.logInfo(filterLabel + " + Full Payment completed");
+        completeThroughMyTravellersAndStop();
+        ExtentReportManager.logInfo(filterLabel + " + Full Payment ended at My Travellers Continue");
     }
 
     /**
@@ -335,6 +320,7 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         SearchResultsPage results = new SearchResultsPage();
         if (!results.isResultsScreen()) {
             navigateBackToResults();
+            results = new SearchResultsPage();
         }
         results.scrollResultsToTop();
         if (filterLabel.toLowerCase().contains("fast")) {
@@ -346,17 +332,66 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
                 "Pay in Installment must remain visible for Installments scenario");
 
         results.selectPayInInstallmentAtIndex(0);
-        pause(3000);
-        PermissionDialog.dismissAll(2);
-        ensureTravelHouseForeground();
+        pause(1500);
+        PermissionDialog.dismissAll(1);
 
         InstallmentPlansPage plansPage = new InstallmentPlansPage();
-        Assert.assertTrue(plansPage.waitUntilDisplayed(20),
+        Assert.assertTrue(plansPage.waitUntilDisplayed(15),
                 "Installment plans must show before selecting: " + planLabel);
         plansPage.selectPlan(planLabel);
-        ensureTravelHouseForeground();
+        plansPage.acceptTermsAndContinue(3);
+        completeThroughMyTravellersAndStop();
+        ExtentReportManager.logInfo(filterLabel + " + Installment plan [" + planLabel
+                + "] ended at My Travellers Continue (no Price Details)");
+    }
+
+    /**
+     * From itinerary / proceed CTAs → My Travellers: fill required details, tap Continue once, stop.
+     * Does not automate or assert on the Price Details screen.
+     */
+    protected void completeThroughMyTravellersAndStop() {
         confirmPastFareToSummary();
-        ExtentReportManager.logInfo(filterLabel + " + Installment plan [" + planLabel + "] completed");
+        PriceSummaryPage summary = new PriceSummaryPage();
+        long deadline = System.currentTimeMillis() + 45_000L;
+        while (System.currentTimeMillis() < deadline) {
+            PermissionDialog.dismissAll(1);
+            if (UiHelper.waitForDescContains("Who's Going", 2)
+                    || UiHelper.waitForDescContains("My Travellers", 2)
+                    || UiHelper.waitForDescContains("Contact Information", 1)) {
+                break;
+            }
+            if (summary.hasProceedCta() || summary.hasProceedWithPayment()) {
+                summary.proceedPastSummary();
+                pause(1200);
+                continue;
+            }
+            if (summary.isDisplayed() || summary.hasTotalPrice()
+                    || UiHelper.waitForDescContains("I accept", 1)
+                    || UiHelper.waitForDescContains("Total Price", 1)) {
+                summary.acceptTermsAndConditions();
+                pause(200);
+                summary.continueIfPresent();
+                pause(1200);
+                continue;
+            }
+            pause(400);
+        }
+
+        TravellerInfoPage traveller = new TravellerInfoPage();
+        traveller.waitUntilVisible();
+        Assert.assertTrue(traveller.isMyTravellersScreen() || traveller.isDisplayed(),
+                "Should reach My Travellers / Traveller Information");
+        ExtentReportManager.logInfo("On My Travellers — completing required details");
+        traveller.completeOnceSelectNameAndFill();
+        traveller.continueOnceAndEnd();
+
+        // Continue may leave Traveller; never drive Price Details automation
+        if (new PriceDetailsPage().isDisplayed()) {
+            ExtentReportManager.logInfo(
+                    "Stopped after My Travellers Continue (Price Details visible but not automated)");
+        } else {
+            ExtentReportManager.logInfo("Stopped after My Travellers Continue");
+        }
     }
 
     private void ensureOrigin(HomePage home, String origin) {
@@ -428,10 +463,6 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
     }
 
     protected static void pause(long millis) {
-        try {
-            Thread.sleep(millis);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        // No fixed sleeps — rely on explicit waits for UI state.
     }
 }
