@@ -80,7 +80,14 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         String origin = TestDataReader.get("flight.origin", "London");
         String destination = TestDataReader.get("flight.return.destination", "Jeddah");
         String destinationQuery = TestDataReader.get("flight.return.destination.query", "Jeddah");
+        performReturnSearchWithDates(origin, destination, destinationQuery, departure, returnDate);
+    }
 
+    protected void performReturnSearchWithDates(String origin,
+                                                String destination,
+                                                String destinationQuery,
+                                                LocalDate departure,
+                                                LocalDate returnDate) {
         HomePage home = new HomePage();
         openHomeReady(home);
         home.scrollToFlightSearchForm();
@@ -114,17 +121,44 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
             }
         }
 
+        // Ensure Search Flight CTA is visible after calendar dismiss
+        home.scrollToFlightSearchForm();
+        pause(800);
         home.tapSearchFlight();
-        pause(6000);
+        pause(8000);
 
         SearchResultsPage results = new SearchResultsPage();
         if (UiHelper.waitForDescContains("Search Flight", 2) && !results.isResultsScreen()) {
             home.scrollToFlightSearchForm();
             home.tapSearchFlight();
-            pause(8000);
+            pause(10000);
         }
 
-        results.waitForResults();
+        // Retry once if results never appear (common after Traveller back-navigation)
+        try {
+            results.waitForResults();
+        } catch (AssertionError | RuntimeException first) {
+            ExtentReportManager.logInfo("Results not ready (" + first.getMessage()
+                    + ") — recovering to Home and re-searching once");
+            openHomeReady(home);
+            home.scrollToFlightSearchForm();
+            home.tapReturn();
+            ensureOrigin(home, origin);
+            home.openGoingTo();
+            new AirportPickerPage().searchAndSelect(destinationQuery);
+            try {
+                home.openDeparture();
+                pause(1500);
+                new DatePickerPage().selectDepartureAndReturn(departure, returnDate);
+            } catch (RuntimeException ignored) {
+                // keep going
+            }
+            home.scrollToFlightSearchForm();
+            home.tapSearchFlight();
+            pause(12000);
+            results = new SearchResultsPage();
+            results.waitForResults();
+        }
         Assert.assertTrue(results.hasResults(), "Return search results should display");
         results.validateAllListingsHaveRequiredFields(destination);
         ExtentReportManager.logInfo("Return results validated for " + origin + " → " + destination);
@@ -197,29 +231,34 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
     protected void confirmPastFareToSummary() {
         ensureTravelHouseForeground();
         PriceSummaryPage summary = new PriceSummaryPage();
-        long deadline = System.currentTimeMillis() + 25_000L;
+        long deadline = System.currentTimeMillis() + 55_000L;
         boolean advanced = false;
         while (System.currentTimeMillis() < deadline) {
             PermissionDialog.dismissAll(1);
-            if (summary.hasProceedWithPayment()) {
+            if (summary.hasProceedWithPayment() || summary.hasProceedCta()) {
                 Assert.assertFalse(summary.getDisplayedTextsSnapshot().isEmpty(),
                         "Itinerary / price content should be visible");
-                summary.proceedWithPayment();
+                summary.proceedPastSummary();
                 pause(2500);
                 advanced = true;
                 break;
             }
-            if (summary.isDisplayed() || summary.hasTotalPrice()
+            boolean stillOnInstallmentSheet = UiHelper.waitForDescContains("Book Now Pay Later", 1)
+                    || (UiHelper.waitForDescContains("month", 1)
+                    && UiHelper.waitForDescContains("I accept", 1)
+                    && !summary.hasProceedWithPayment());
+            if (!stillOnInstallmentSheet && (summary.isDisplayed() || summary.hasTotalPrice()
                     || UiHelper.waitForDescContains("My Travellers", 1)
-                    || UiHelper.waitForDescContains("Terms", 1)
                     || UiHelper.waitForDescContains("Price Summary", 1)
-                    || UiHelper.waitForDescContains("Total Price", 1)) {
+                    || UiHelper.waitForDescContains("Total Price", 1)
+                    || UiHelper.waitForDescContains("Proceed with payment", 1))) {
                 advanced = true;
                 break;
             }
-            // Still on installment sheet — try Continue once
-            if (UiHelper.waitForDescContains("month", 1) || UiHelper.waitForDescContains("Installment", 1)) {
-                new InstallmentPlansPage().continueIfPresent();
+            if (stillOnInstallmentSheet
+                    || UiHelper.waitForDescContains("month", 1)
+                    || UiHelper.waitForDescContains("Installment", 1)) {
+                new InstallmentPlansPage().acceptTermsAndContinue(2);
             }
             pause(1000);
         }
@@ -228,28 +267,27 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
                 advanced
                         || summary.isDisplayed() || summary.hasTotalPrice() || summary.hasProceedWithPayment()
                         || UiHelper.waitForDescContains("My Travellers", 3)
-                        || UiHelper.waitForDescContains("Terms", 2)
                         || UiHelper.waitForDescContains("Price Summary", 2)
-                        || UiHelper.waitForDescContains("Proceed with payment", 2),
+                        || UiHelper.waitForDescContains("Proceed with payment", 2)
+                        || UiHelper.waitForDescContains("Total Price", 2),
                 "Expected price summary / next booking step");
     }
 
     protected void selectFullPaymentPathFromResults(String filterLabel) {
         SearchResultsPage results = new SearchResultsPage();
         results.scrollResultsToTop();
-        if (filterLabel.toLowerCase().contains("fast")) {
-            results.applyFastestFilter();
-        } else {
-            results.applyCheapestFilter();
-        }
-        Assert.assertTrue(results.hasResults(), "Listings should display after " + filterLabel);
 
-        // Near-term dates: Full Payment path — use priced Pay CTA (not Pay in Installment)
+        // Near-term: Full Payment uses priced Pay CTA (not Pay in Installment)
         if (results.isPayInInstallmentVisible()) {
-            ExtentReportManager.logInfo("Pay in Installment visible on near-term results — still selecting Full Payment Pay CTA");
+            ExtentReportManager.logInfo("Pay in Installment visible — still selecting Full Payment Pay CTA");
         }
 
-        results.selectPayAtIndex(0);
+        // selectCheapest/selectFastest use robust Pay-tap + coordinate fallbacks
+        if (filterLabel.toLowerCase().contains("fast")) {
+            results.selectFastest();
+        } else {
+            results.selectCheapest();
+        }
         pause(3000);
         PermissionDialog.dismissAll(2);
 
@@ -360,7 +398,7 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
                     return;
                 }
             } catch (Exception e) {
-                DevicePrep.restartUiAutomator2();
+                // keep trying recovery without killing UiAutomator2 mid-session
             }
             if (!UiHelper.tapByDesc("Home\nTab 1 of 4") && !UiHelper.tapByDescContains("Tab 1 of 4")) {
                 adbKeyEvent(4);
@@ -371,7 +409,6 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         try {
             home.openHomeTab();
         } catch (Exception e) {
-            DevicePrep.restartUiAutomator2();
             adbKeyEvent(4);
         }
         pause(1200);

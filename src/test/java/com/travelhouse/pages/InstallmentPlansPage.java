@@ -89,6 +89,15 @@ public class InstallmentPlansPage {
         return list;
     }
 
+    /** Selects the Nth discovered plan (0-based) after refreshing the visible list. */
+    public void selectPlanByIndex(int index) {
+        List<String> plans = discoverAvailablePlans();
+        Assert.assertFalse(plans.isEmpty(), "No installment plans visible to select by index");
+        Assert.assertTrue(index >= 0 && index < plans.size(),
+                "Installment plan index out of range: " + index + " of " + plans.size());
+        selectPlan(plans.get(index));
+    }
+
     public void selectPlan(String planLabel) {
         Assert.assertNotNull(planLabel, "planLabel");
         Assert.assertFalse(planLabel.isBlank(), "planLabel blank");
@@ -175,19 +184,136 @@ public class InstallmentPlansPage {
         return false;
     }
 
+    /**
+     * Book Now Pay Later requires Terms checked before Continue is enabled.
+     * Checkbox is a small empty clickable View left of "I accept " (not a CheckBox class).
+     */
+    public void acceptTermsIfPresent() {
+        if (!UiHelper.waitForDescContains("I accept", 2)
+                && !UiHelper.waitForDescContains("Continue", 1)) {
+            return;
+        }
+        // 1) Dedicated empty clickable checkbox node (bounds typically ~55,2070–110,2125 on 1080x2400)
+        try {
+            org.openqa.selenium.Dimension size = driver.manage().window().getSize();
+            int minY = (int) (size.height * 0.70);
+            for (WebElement el : driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().clickable(true)"))) {
+                String desc = safeDesc(el);
+                org.openqa.selenium.Rectangle r = el.getRect();
+                boolean emptyDesc = desc == null || desc.isBlank();
+                boolean smallBox = r.width > 0 && r.width <= 90 && r.height > 0 && r.height <= 90;
+                boolean nearTermsRow = r.y >= minY && r.x < size.width * 0.25;
+                if (emptyDesc && smallBox && nearTermsRow) {
+                    el.click();
+                    pause(600);
+                    ExtentReportManager.logInfo("Accepted Terms via empty checkbox node "
+                            + r.x + "," + r.y + " " + r.width + "x" + r.height);
+                    return;
+                }
+            }
+        } catch (Exception e) {
+            ExtentReportManager.logInfo("Checkbox node scan note: " + e.getMessage());
+        }
+        // 2) Native checkbox (rare on Flutter)
+        try {
+            List<WebElement> checkboxes = driver.findElements(
+                    AppiumBy.className("android.widget.CheckBox"));
+            for (WebElement box : checkboxes) {
+                if (!"true".equalsIgnoreCase(String.valueOf(box.getAttribute("checked")))) {
+                    box.click();
+                    pause(500);
+                    return;
+                }
+            }
+        } catch (Exception ignored) {
+            // ignore
+        }
+        // 3) Coordinate: left of "I accept " label
+        try {
+            List<WebElement> labels = driver.findElements(AppiumBy.androidUIAutomator(
+                    "new UiSelector().descriptionContains(\"I accept\")"));
+            if (!labels.isEmpty()) {
+                org.openqa.selenium.Rectangle r = labels.get(0).getRect();
+                int x = Math.max(20, r.x - 40);
+                int y = r.y + r.height / 2;
+                GestureUtil.tapAt(x, y);
+                pause(500);
+                ExtentReportManager.logInfo("Accepted Terms left of I-accept at " + x + "," + y);
+                return;
+            }
+        } catch (Exception e) {
+            ExtentReportManager.logInfo("Terms left-of-label note: " + e.getMessage());
+        }
+        // 4) Hard fallback for 1080-wide screens
+        try {
+            org.openqa.selenium.Dimension size = driver.manage().window().getSize();
+            GestureUtil.tapAt(82, (int) (size.height * 0.873));
+            pause(500);
+        } catch (Exception ignored) {
+            // ignore
+        }
+    }
+
+    /** Accept Terms and tap Continue until the installment sheet closes. */
+    public boolean acceptTermsAndContinue(int maxAttempts) {
+        for (int i = 0; i < Math.max(1, maxAttempts); i++) {
+            acceptTermsIfPresent();
+            pause(500);
+            // Continue is often clickable=false until Terms are checked — re-find after accept
+            boolean tapped = false;
+            try {
+                List<WebElement> continues = driver.findElements(AppiumBy.androidUIAutomator(
+                        "new UiSelector().description(\"Continue\")"));
+                if (!continues.isEmpty()) {
+                    WebElement btn = continues.get(0);
+                    // Prefer click; if disabled, coordinate-tap center
+                    try {
+                        if ("true".equalsIgnoreCase(String.valueOf(btn.getAttribute("clickable")))) {
+                            btn.click();
+                            tapped = true;
+                        } else {
+                            org.openqa.selenium.Rectangle r = btn.getRect();
+                            GestureUtil.tapAt(r.x + r.width / 2, r.y + r.height / 2);
+                            tapped = true;
+                        }
+                    } catch (Exception e) {
+                        org.openqa.selenium.Rectangle r = btn.getRect();
+                        GestureUtil.tapAt(r.x + r.width / 2, r.y + r.height / 2);
+                        tapped = true;
+                    }
+                }
+            } catch (Exception ignored) {
+                // fall through
+            }
+            if (!tapped) {
+                if (UiHelper.tapByDesc("Continue") || UiHelper.tapByDescContains("Continue")) {
+                    tapped = true;
+                } else {
+                    try {
+                        org.openqa.selenium.Dimension size = driver.manage().window().getSize();
+                        GestureUtil.tapAt(size.width / 2, (int) (size.height * 0.935));
+                        tapped = true;
+                    } catch (Exception ignored) {
+                        // ignore
+                    }
+                }
+            }
+            if (tapped) {
+                pause(1800);
+            }
+            if (!UiHelper.waitForDescContains("Book Now Pay Later", 1)
+                    && !(UiHelper.waitForDescContains("I accept", 1)
+                    && UiHelper.waitForDescContains("month", 1))) {
+                ExtentReportManager.logInfo("Left installment sheet after Continue attempt " + (i + 1));
+                return true;
+            }
+        }
+        return !UiHelper.waitForDescContains("Book Now Pay Later", 1);
+    }
+
     public void continueIfPresent() {
-        // Only tap explicit booking CTAs — broad "Select"/"Apply" can hit OS/settings chrome
-        if (UiHelper.tapByDesc("Continue") || UiHelper.tapByDescContains("Continue")) {
-            pause(1200);
-            return;
-        }
-        if (UiHelper.tapByDesc("Confirm") || UiHelper.tapByDescContains("Confirm")) {
-            pause(1200);
-            return;
-        }
-        if (UiHelper.tapByDesc("Next") || UiHelper.tapByDescContains("Next")) {
-            pause(1200);
-        }
+        acceptTermsAndContinue(3);
     }
 
     private List<String> discoverPlanLabelsFromSource(String source) {

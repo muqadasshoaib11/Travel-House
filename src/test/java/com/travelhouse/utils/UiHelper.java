@@ -47,8 +47,8 @@ public final class UiHelper {
                 elements.get(0).click();
                 return true;
             }
-        } catch (Exception e) {
-            DevicePrep.restartUiAutomator2();
+        } catch (Exception ignored) {
+            // Do not force-stop UiAutomator2 mid-session
         }
         return false;
     }
@@ -60,8 +60,8 @@ public final class UiHelper {
                 elements.get(0).click();
                 return true;
             }
-        } catch (Exception e) {
-            DevicePrep.restartUiAutomator2();
+        } catch (Exception ignored) {
+            // Do not force-stop UiAutomator2 mid-session
         }
         return false;
     }
@@ -73,8 +73,8 @@ public final class UiHelper {
                 elements.get(0).click();
                 return true;
             }
-        } catch (Exception e) {
-            DevicePrep.restartUiAutomator2();
+        } catch (Exception ignored) {
+            // Do not force-stop UiAutomator2 mid-session
         }
         return false;
     }
@@ -160,12 +160,11 @@ public final class UiHelper {
             return callWithTimeout(FIND_TIMEOUT_SECONDS,
                     () -> DriverManager.getDriver().findElements(locator));
         } catch (TimeoutException e) {
-            System.out.println("[UiHelper] findElements timed out for " + locator + " — recycling UiAutomator2");
-            DevicePrep.restartUiAutomator2();
+            // Do NOT force-stop UiAutomator2 here — that orphans the live Appium session.
+            System.out.println("[UiHelper] findElements timed out for " + locator);
             return Collections.emptyList();
         } catch (Exception e) {
             System.out.println("[UiHelper] findElements failed: " + e.getMessage());
-            DevicePrep.restartUiAutomator2();
             return Collections.emptyList();
         }
     }

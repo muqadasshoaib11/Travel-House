@@ -56,7 +56,6 @@ public final class PermissionDialog {
             return false;
         } catch (Exception e) {
             System.out.println("[Permission] dismissOnce failed: " + e.getMessage());
-            DevicePrep.restartUiAutomator2();
             return false;
         } finally {
             try {
@@ -78,7 +77,6 @@ public final class PermissionDialog {
                     handled = true;
                 }
             } catch (Exception e) {
-                DevicePrep.restartUiAutomator2();
                 break;
             }
 
@@ -102,7 +100,6 @@ public final class PermissionDialog {
                 }
             } catch (Exception e) {
                 System.out.println("[Permission] Cancel handling failed: " + e.getMessage());
-                DevicePrep.restartUiAutomator2();
                 // Fall back to system Back (often dismisses biometric sheet)
                 adbBack();
                 break;
