@@ -4,10 +4,13 @@
         <listener class-name="com.travelhouse.utils.TestListener"/>
     </listeners>
 
-    <!-- Scenario B: far-out dates, all installment plans × Cheapest/Fastest -->
+    <!--
+      Scenario B: Pay in Installment plans 1–6, search 4–6 months ahead,
+      through My Travellers (Continue) — no Price Details automation.
+    -->
     <test name="Return Search Installments All Plans">
         <classes>
-            <class name="com.travelhouse.tests.ReturnFlightInstallmentsSuiteTest"/>
+            <class name="com.travelhouse.tests.ReturnJuly2027SixInstallmentsSuiteTest"/>
         </classes>
     </test>
 </suite>

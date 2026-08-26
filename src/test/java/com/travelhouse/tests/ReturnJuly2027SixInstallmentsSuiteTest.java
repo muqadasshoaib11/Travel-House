@@ -1,7 +1,10 @@
 package com.travelhouse.tests;
 
 import com.travelhouse.pages.InstallmentPlansPage;
+import com.travelhouse.pages.PriceDetailsPage;
+import com.travelhouse.pages.PriceSummaryPage;
 import com.travelhouse.pages.SearchResultsPage;
+import com.travelhouse.pages.TravellerInfoPage;
 import com.travelhouse.utils.ExtentReportManager;
 import com.travelhouse.utils.PermissionDialog;
 import com.travelhouse.utils.UiHelper;
@@ -16,12 +19,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * London → Islamabad Return installments (1–6 month plans):
- * For an N-month installment plan, departure is set N months ahead (return ~29 days later).
- * Runs Cheapest for each plan 1→6 through My Travellers (fill + Continue), then one Fastest
- * + Installment flow (6-month plan). Stops after My Travellers Continue — no Price Details.
- *
- * Local suite only — do not push unless explicitly requested.
+ * London → Islamabad Return — Pay in Installment plans 1–6 months.
+ * <p>
+ * Search dates stay in a 4–6 month window so the blue Pay in Installment CTA is available.
+ * Each available plan (1→6) is run on Cheapest through My Travellers (fill + Continue), then
+ * one Fastest flow for the 6-month plan. Flow ends after Traveller Continue — Price Details
+ * is never automated.
  */
 public class ReturnJuly2027SixInstallmentsSuiteTest extends AbstractReturnFlightSearchTest {
 
@@ -30,6 +33,9 @@ public class ReturnJuly2027SixInstallmentsSuiteTest extends AbstractReturnFlight
     private static final String DESTINATION_QUERY = "Islamabad";
     private static final int MIN_PLAN_MONTHS = 1;
     private static final int MAX_PLAN_MONTHS = 6;
+    /** Departure must be far enough for Pay in Installment (4–6 months). */
+    private static final int MIN_SEARCH_MONTHS = 4;
+    private static final int MAX_SEARCH_MONTHS = 6;
     private static final int RETURN_DAYS_AFTER = 29;
     private static final Pattern MONTHS_IN_PLAN = Pattern.compile("(\\d+)\\s*months?");
 
@@ -42,12 +48,11 @@ public class ReturnJuly2027SixInstallmentsSuiteTest extends AbstractReturnFlight
     }
 
     @Test(priority = 2, timeOut = 600_000, dependsOnMethods = "step01_loginOrHome",
-            description = "Discover installment plans 1–6 months (search 6 months ahead)")
+            description = "Discover installment plans 1–6 (search ~6 months ahead)")
     public void step02_search_discoverSixPlans() {
-        // Far-out search so the full plan list (incl. 6 month) is available
-        searchReturnForMonthsAhead(MAX_PLAN_MONTHS);
-        Assert.assertTrue(new SearchResultsPage().isPayInInstallmentVisible(),
-                "Blue Pay in Installment must appear for " + MAX_PLAN_MONTHS + " months ahead");
+        searchReturnForMonthsAhead(MAX_SEARCH_MONTHS);
+        Assert.assertTrue(new SearchResultsPage().waitForPayInInstallmentVisible(20),
+                "Blue Pay in Installment must appear for " + MAX_SEARCH_MONTHS + " months ahead");
 
         SearchResultsPage results = new SearchResultsPage();
         results.scrollResultsToTop();
@@ -65,57 +70,70 @@ public class ReturnJuly2027SixInstallmentsSuiteTest extends AbstractReturnFlight
         installmentPlans = filterPlansByMonths(discovered, MIN_PLAN_MONTHS, MAX_PLAN_MONTHS);
         Assert.assertFalse(installmentPlans.isEmpty(),
                 "Expected plans for " + MIN_PLAN_MONTHS + "–" + MAX_PLAN_MONTHS + " months, got: " + discovered);
-        ExtentReportManager.logInfo("Installment plans to run (date = N months ahead): " + installmentPlans);
+        ExtentReportManager.logInfo("Installment plans to run (search window "
+                + MIN_SEARCH_MONTHS + "–" + MAX_SEARCH_MONTHS + " months): " + installmentPlans);
         navigateBackToHomeForNewSearch();
     }
 
     @Test(priority = 3, timeOut = 4_200_000, dependsOnMethods = "step02_search_discoverSixPlans",
-            description = "Cheapest: each 1–6 month plan with matching departure months ahead")
+            description = "Cheapest: each 1–6 month plan through My Travellers (stop after Continue)")
     public void step03_cheapest_eachInstallmentToTraveller() {
         Assert.assertFalse(installmentPlans.isEmpty(), "Plans must be discovered first");
 
         for (int i = 0; i < installmentPlans.size(); i++) {
             String plan = installmentPlans.get(i);
-            int months = monthsFromPlan(plan);
-            Assert.assertTrue(months >= MIN_PLAN_MONTHS && months <= MAX_PLAN_MONTHS,
+            int planMonths = monthsFromPlan(plan);
+            Assert.assertTrue(planMonths >= MIN_PLAN_MONTHS && planMonths <= MAX_PLAN_MONTHS,
                     "Unexpected plan months for: " + plan);
 
-            LocalDate departure = LocalDate.now().plusMonths(months);
+            int searchMonths = searchMonthsForPlan(planMonths);
+            LocalDate departure = LocalDate.now().plusMonths(searchMonths);
             LocalDate returnDate = departure.plusDays(RETURN_DAYS_AFTER);
             ExtentReportManager.logInfo("=== Cheapest " + (i + 1) + "/" + installmentPlans.size()
                     + ": plan [" + plan + "] dates " + departure + " → " + returnDate
-                    + " (" + months + " months ahead) ===");
+                    + " (search " + searchMonths + " months ahead) ===");
 
             searchReturnWithDates(departure, returnDate);
-            bookInstallmentPlanThroughTraveller("Cheapest", plan);
+            bookInstallmentThroughMyTravellersOnly("Cheapest", plan);
 
             if (i < installmentPlans.size() - 1) {
                 navigateBackToHomeForNewSearch();
-                // Extra settle time so the next date-matched search is not flaky
                 pause(2000);
             }
         }
-        ExtentReportManager.logInfo("Completed Cheapest installment plans 1–6 months through Traveller");
+        ExtentReportManager.logInfo(
+                "Completed Cheapest installment plans 1–6 through My Travellers (no Price Details)");
     }
 
     @Test(priority = 4, timeOut = 900_000, dependsOnMethods = "step03_cheapest_eachInstallmentToTraveller",
-            description = "One Fastest + Installment (6 months ahead / 6-month plan)")
+            description = "One Fastest + Installment (6-month plan) through My Travellers only")
     public void step04_fastest_oneInstallmentFlow() {
         Assert.assertFalse(installmentPlans.isEmpty(), "Plans must be discovered first");
         String plan = pickPlanForMonths(installmentPlans, MAX_PLAN_MONTHS);
         if (plan == null) {
             plan = installmentPlans.get(installmentPlans.size() - 1);
         }
-        int months = monthsFromPlan(plan);
-        LocalDate departure = LocalDate.now().plusMonths(months);
+        int searchMonths = searchMonthsForPlan(monthsFromPlan(plan));
+        LocalDate departure = LocalDate.now().plusMonths(searchMonths);
         LocalDate returnDate = departure.plusDays(RETURN_DAYS_AFTER);
 
         navigateBackToHomeForNewSearch();
         searchReturnWithDates(departure, returnDate);
         ExtentReportManager.logInfo("=== Fastest one-flow: plan [" + plan + "] dates "
                 + departure + " → " + returnDate + " ===");
-        bookInstallmentPlanThroughTraveller("Fastest", plan);
-        ExtentReportManager.logInfo("Fastest + Installment single flow completed");
+        bookInstallmentThroughMyTravellersOnly("Fastest", plan);
+        ExtentReportManager.logInfo("Fastest + Installment ended after My Travellers Continue");
+    }
+
+    /**
+     * Keep departure in the 4–6 month window so Pay in Installment stays available.
+     * Plan length 1–3 months still uses a 4-month search; 4–6 use matching months.
+     */
+    private static int searchMonthsForPlan(int planMonths) {
+        if (planMonths < MIN_SEARCH_MONTHS) {
+            return MIN_SEARCH_MONTHS;
+        }
+        return Math.min(planMonths, MAX_SEARCH_MONTHS);
     }
 
     private void searchReturnForMonthsAhead(int monthsAhead) {
@@ -126,11 +144,15 @@ public class ReturnJuly2027SixInstallmentsSuiteTest extends AbstractReturnFlight
 
     private void searchReturnWithDates(LocalDate departure, LocalDate returnDate) {
         performReturnSearchWithDates(ORIGIN, DESTINATION, DESTINATION_QUERY, departure, returnDate);
-        Assert.assertTrue(new SearchResultsPage().isPayInInstallmentVisible(),
+        Assert.assertTrue(new SearchResultsPage().waitForPayInInstallmentVisible(20),
                 "Pay in Installment (blue) must be available for " + departure + " → " + returnDate);
     }
 
-    private void bookInstallmentPlanThroughTraveller(String filterLabel, String planLabel) {
+    /**
+     * Pay in Installment → select plan → Price Summary (to reach travellers) →
+     * My Travellers fill + Continue → stop. Never opens or fills Price Details.
+     */
+    private void bookInstallmentThroughMyTravellersOnly(String filterLabel, String planLabel) {
         ensureResultsReadyForInstallment();
         SearchResultsPage results = new SearchResultsPage();
         results.scrollResultsToTop();
@@ -154,9 +176,81 @@ public class ReturnJuly2027SixInstallmentsSuiteTest extends AbstractReturnFlight
         Assert.assertTrue(plansPage.acceptTermsAndContinue(5),
                 "Could not Continue after accepting Terms for plan: " + planLabel);
         ensureTravelHouseForeground();
-        completeThroughMyTravellersAndStop();
+
+        advanceFromFareOrSummaryToMyTravellers();
+
+        TravellerInfoPage traveller = new TravellerInfoPage();
+        traveller.waitUntilVisible();
+        Assert.assertTrue(traveller.isMyTravellersScreen() || traveller.isDisplayed(),
+                "Should reach My Travellers / Traveller Information");
+        Assert.assertFalse(new PriceDetailsPage().isDisplayed(),
+                "Must not be on Price Details before completing My Travellers");
+
+        traveller.completeOnceSelectNameAndFill();
+        traveller.continueOnceAndEnd();
+
+        // End of automation: Continue was tapped; do not interact with Price Details
+        if (new PriceDetailsPage().isDisplayed()) {
+            ExtentReportManager.logInfo(
+                    "App may show Price Details after Continue — leaving without automating it");
+        }
         ExtentReportManager.logInfo(filterLabel + " + plan [" + planLabel
-                + "] ended at My Travellers Continue (no Price Details)");
+                + "] completed My Travellers (Continue) — flow ended (no Price Details)");
+    }
+
+    /**
+     * Reach My Travellers via itinerary / Price Summary CTAs only.
+     * Does not open Price Details.
+     */
+    private void advanceFromFareOrSummaryToMyTravellers() {
+        PriceSummaryPage summary = new PriceSummaryPage();
+        long deadline = System.currentTimeMillis() + 55_000L;
+        while (System.currentTimeMillis() < deadline) {
+            PermissionDialog.dismissAll(1);
+            if (UiHelper.waitForDescContains("Who's Going", 1)
+                    || UiHelper.waitForDescContains("My Travellers", 1)
+                    || UiHelper.waitForDescContains("Contact Information", 1)) {
+                return;
+            }
+            // Never tap into Price Details
+            if (new PriceDetailsPage().isDisplayed()
+                    && !summary.hasProceedCta()
+                    && !UiHelper.waitForDescContains("Who's Going", 1)) {
+                ExtentReportManager.logInfo("Saw Price Details unexpectedly — backing up");
+                try {
+                    com.travelhouse.base.DriverManager.getDriver().navigate().back();
+                } catch (Exception ignored) {
+                    adbKeyEvent(4);
+                }
+                pause(1000);
+                continue;
+            }
+            if (summary.hasProceedCta()) {
+                summary.proceedPastSummary();
+                pause(2500);
+                continue;
+            }
+            if (summary.isDisplayed() || summary.hasTotalPrice()
+                    || UiHelper.waitForDescContains("I accept", 1)
+                    || UiHelper.waitForDescContains("Total Price", 1)) {
+                summary.acceptTermsAndConditions();
+                pause(400);
+                summary.continueIfPresent();
+                pause(2500);
+                continue;
+            }
+            if (UiHelper.waitForDescContains("Book Now Pay Later", 1)
+                    || (UiHelper.waitForDescContains("month", 1)
+                    && UiHelper.waitForDescContains("I accept", 1))) {
+                new InstallmentPlansPage().acceptTermsAndContinue(2);
+            }
+            pause(1000);
+        }
+        Assert.assertTrue(
+                UiHelper.waitForDescContains("Who's Going", 3)
+                        || UiHelper.waitForDescContains("My Travellers", 3)
+                        || UiHelper.waitForDescContains("Contact Information", 2),
+                "Expected My Travellers after installment / summary steps (not Price Details)");
     }
 
     private void navigateBackToHomeForNewSearch() {

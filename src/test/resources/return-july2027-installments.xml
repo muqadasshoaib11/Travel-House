@@ -1,16 +1,18 @@
 <!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
-<suite name="Travel House Installments 1-6 Months Matched Dates" verbose="1" parallel="false">
+<suite name="Travel House Installments 1-6 Months Through My Travellers" verbose="1" parallel="false">
     <listeners>
         <listener class-name="com.travelhouse.utils.TestListener"/>
     </listeners>
 
     <!--
-      London → Islamabad Return
-      For N-month installment (1–6): departure = today + N months.
-      Cheapest × each plan through Traveller, then one Fastest (6-month).
+      London → Islamabad Return — Pay in Installment plans 1–6
+      Search dates: 4–6 months ahead (so Pay in Installment is available).
+      Cheapest × each plan through My Travellers (fill + Continue), then one Fastest (6-month).
+      Ends after My Travellers Continue — does not automate Price Details.
       Local run: mvn test -DsuiteXmlFile=src/test/resources/return-july2027-installments.xml
+      Or: .\scripts\ci-run.ps1 -SuiteXml "src\test\resources\return-july2027-installments.xml"
     -->
-    <test name="Installments 1-6 Months Cheapest Then Fastest">
+    <test name="Installments 1-6 Through My Travellers">
         <classes>
             <class name="com.travelhouse.tests.ReturnJuly2027SixInstallmentsSuiteTest"/>
         </classes>
