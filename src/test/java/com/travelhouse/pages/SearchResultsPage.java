@@ -61,14 +61,27 @@ public class SearchResultsPage {
         }
     }
 
-    /** True when flight results chrome is visible (not the Home search form). */
+    /**
+     * True when flight results chrome is visible (Cheapest/Fastest filters).
+     * Do NOT treat bare "Pay" as results — Price Summary's "Proceed with payment"
+     * matches that and previously made navigateBackToResults stop too early.
+     */
     public boolean isResultsScreen() {
+        if (isBookingSummaryOrTravellerScreen()) {
+            return false;
+        }
         return UiHelper.waitForDescContains("Cheapest", 1)
-                || UiHelper.waitForDescContains("Fastest", 1)
-                || (!driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Pay\")")).isEmpty()
-                && driver.findElements(AppiumBy.androidUIAutomator(
-                "new UiSelector().descriptionContains(\"Search Flight\")")).isEmpty());
+                || UiHelper.waitForDescContains("Fastest", 1);
+    }
+
+    /** Post-results booking screens that must not be treated as search results. */
+    public boolean isBookingSummaryOrTravellerScreen() {
+        return UiHelper.waitForDescContains("Proceed with payment", 1)
+                || UiHelper.waitForDescContains("Proceed With Query", 1)
+                || UiHelper.waitForDescContains("Price Summary", 1)
+                || UiHelper.waitForDescContains("Price Detail", 1)
+                || UiHelper.waitForDescContains("My Travellers", 1)
+                || UiHelper.waitForDescContains("Who's Going", 1);
     }
 
     public boolean hasResults() {
@@ -203,8 +216,31 @@ public class SearchResultsPage {
     }
 
     public boolean isPayInInstallmentVisible() {
-        return UiHelper.waitForDescContains("Pay in Installment", 3)
-                || UiHelper.waitForDescContains("Pay in Instalment", 2);
+        return waitForPayInInstallmentVisible(8);
+    }
+
+    /**
+     * Waits for the blue installment CTA, scrolling the list if filters just refreshed.
+     */
+    public boolean waitForPayInInstallmentVisible(int seconds) {
+        long deadline = System.currentTimeMillis() + Math.max(1, seconds) * 1000L;
+        while (System.currentTimeMillis() < deadline) {
+            if (UiHelper.waitForDescContains("Pay in Installment", 1)
+                    || UiHelper.waitForDescContains("Pay in Instalment", 1)) {
+                return true;
+            }
+            // CTA may sit below the fold after Cheapest/Fastest re-sort
+            GestureUtil.swipeUp();
+            pause(600);
+            if (UiHelper.waitForDescContains("Pay in Installment", 1)
+                    || UiHelper.waitForDescContains("Pay in Instalment", 1)) {
+                return true;
+            }
+            GestureUtil.swipeDown();
+            pause(500);
+        }
+        return UiHelper.waitForDescContains("Pay in Installment", 1)
+                || UiHelper.waitForDescContains("Pay in Instalment", 1);
     }
 
     /** Selects the Pay button at the given index (0-based) among visible priced flights. */

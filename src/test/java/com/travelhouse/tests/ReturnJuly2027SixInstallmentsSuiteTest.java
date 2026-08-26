@@ -1,9 +1,7 @@
 package com.travelhouse.tests;
 
 import com.travelhouse.pages.InstallmentPlansPage;
-import com.travelhouse.pages.PriceSummaryPage;
 import com.travelhouse.pages.SearchResultsPage;
-import com.travelhouse.pages.TravellerInfoPage;
 import com.travelhouse.utils.ExtentReportManager;
 import com.travelhouse.utils.PermissionDialog;
 import com.travelhouse.utils.UiHelper;
@@ -20,8 +18,8 @@ import java.util.regex.Pattern;
 /**
  * London → Islamabad Return installments (1–6 month plans):
  * For an N-month installment plan, departure is set N months ahead (return ~29 days later).
- * Runs Cheapest for each plan 1→6 through Traveller Information (select name once, fill once),
- * then one Fastest + Installment flow (6-month plan / 6 months ahead).
+ * Runs Cheapest for each plan 1→6 through My Travellers (fill + Continue), then one Fastest
+ * + Installment flow (6-month plan). Stops after My Travellers Continue — no Price Details.
  *
  * Local suite only — do not push unless explicitly requested.
  */
@@ -133,6 +131,7 @@ public class ReturnJuly2027SixInstallmentsSuiteTest extends AbstractReturnFlight
     }
 
     private void bookInstallmentPlanThroughTraveller(String filterLabel, String planLabel) {
+        ensureResultsReadyForInstallment();
         SearchResultsPage results = new SearchResultsPage();
         results.scrollResultsToTop();
         if (filterLabel.toLowerCase(Locale.ENGLISH).contains("fast")) {
@@ -140,7 +139,7 @@ public class ReturnJuly2027SixInstallmentsSuiteTest extends AbstractReturnFlight
         } else {
             results.applyCheapestFilter();
         }
-        Assert.assertTrue(results.isPayInInstallmentVisible(),
+        Assert.assertTrue(results.waitForPayInInstallmentVisible(15),
                 "Pay in Installment must remain visible before booking");
 
         results.selectPayInInstallmentAtIndex(0);
@@ -155,41 +154,9 @@ public class ReturnJuly2027SixInstallmentsSuiteTest extends AbstractReturnFlight
         Assert.assertTrue(plansPage.acceptTermsAndContinue(5),
                 "Could not Continue after accepting Terms for plan: " + planLabel);
         ensureTravelHouseForeground();
-        confirmPastFareToSummary();
-
-        PriceSummaryPage summary = new PriceSummaryPage();
-        // Installment path may show "Proceed With Query" instead of "Proceed with payment"
-        for (int i = 0; i < 4; i++) {
-            if (UiHelper.waitForDescContains("Who's Going", 2)
-                    || UiHelper.waitForDescContains("My Travellers", 2)
-                    || UiHelper.waitForDescContains("Contact Information", 1)) {
-                break;
-            }
-            if (summary.hasProceedCta()) {
-                summary.proceedPastSummary();
-                pause(2500);
-                continue;
-            }
-            if (summary.isDisplayed() || summary.hasTotalPrice()
-                    || UiHelper.waitForDescContains("I accept", 1)
-                    || UiHelper.waitForDescContains("Total Price", 1)) {
-                summary.acceptTermsAndConditions();
-                pause(400);
-                summary.continueIfPresent();
-                pause(2500);
-                continue;
-            }
-            pause(1000);
-        }
-
-        TravellerInfoPage traveller = new TravellerInfoPage();
-        traveller.waitUntilVisible();
-        Assert.assertTrue(traveller.isMyTravellersScreen() || traveller.isDisplayed(),
-                "Should reach Traveller Information");
-        traveller.completeOnceSelectNameAndFill();
-        traveller.continueOnceAndEnd();
+        completeThroughMyTravellersAndStop();
         ExtentReportManager.logInfo(filterLabel + " + plan [" + planLabel
-                + "] reached end of Traveller flow");
+                + "] ended at My Travellers Continue (no Price Details)");
     }
 
     private void navigateBackToHomeForNewSearch() {

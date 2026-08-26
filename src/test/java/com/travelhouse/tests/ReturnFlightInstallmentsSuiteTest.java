@@ -12,7 +12,8 @@ import java.util.List;
 /**
  * Scenario B — Installments (departure ~3 months ahead):
  * Login → Return search → validate listings → discover all installment plans →
- * For EACH plan: Cheapest + plan, then Fastest + plan.
+ * For EACH plan: Cheapest + plan, then Fastest + plan, through My Travellers
+ * (fill required details → Continue). Does not automate Price Details.
  *
  * Branch: feature/return-search-installments
  */

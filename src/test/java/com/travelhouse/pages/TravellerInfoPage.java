@@ -126,7 +126,7 @@ public class TravellerInfoPage {
         pause(600);
     }
 
-    /** Taps Continue once and waits for navigation — no second fill pass. */
+    /** Taps Continue once and ends the automated flow — does not drive Price Details. */
     public void continueOnceAndEnd() {
         dismissOverlayIfOpen();
         GestureUtil.swipeUp();

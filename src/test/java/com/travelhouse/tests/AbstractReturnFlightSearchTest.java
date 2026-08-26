@@ -12,8 +12,10 @@ import com.travelhouse.pages.HomePage;
 import com.travelhouse.pages.InstallmentPlansPage;
 import com.travelhouse.pages.LoginPage;
 import com.travelhouse.pages.OnboardingPage;
+import com.travelhouse.pages.PriceDetailsPage;
 import com.travelhouse.pages.PriceSummaryPage;
 import com.travelhouse.pages.SearchResultsPage;
+import com.travelhouse.pages.TravellerInfoPage;
 import com.travelhouse.utils.DevicePrep;
 import com.travelhouse.utils.ExtentReportManager;
 import com.travelhouse.utils.PermissionDialog;
@@ -168,7 +170,8 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         for (int i = 0; i < 12; i++) {
             SearchResultsPage results = new SearchResultsPage();
             try {
-                if (results.isResultsScreen()) {
+                // Require real results chrome — not Price Summary ("Proceed with payment")
+                if (results.isResultsScreen() && !results.isBookingSummaryOrTravellerScreen()) {
                     return;
                 }
             } catch (Exception ignored) {
@@ -187,6 +190,30 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         LocalDate returnDate = departure.plusDays(resolveReturnDaysAfter());
         performReturnSearchWithDates(departure, returnDate);
         Assert.assertTrue(new SearchResultsPage().hasResults(), "Could not return to search results");
+    }
+
+    /**
+     * After a plan path we often sit on Price Summary; Back until Cheapest/Fastest
+     * (or re-search) so the next Cheapest/Fastest × plan loop can find installments.
+     */
+    protected void ensureResultsReadyForInstallment() {
+        SearchResultsPage results = new SearchResultsPage();
+        if (!results.isResultsScreen() || results.isBookingSummaryOrTravellerScreen()
+                || !results.waitForPayInInstallmentVisible(5)) {
+            navigateBackToResults();
+            results = new SearchResultsPage();
+        }
+        if (!results.waitForPayInInstallmentVisible(10)) {
+            ExtentReportManager.logInfo("Installment CTA still missing — re-running Return search");
+            LocalDate departure = resolveDepartureDate();
+            LocalDate returnDate = departure.plusDays(resolveReturnDaysAfter());
+            performReturnSearchWithDates(departure, returnDate);
+            results = new SearchResultsPage();
+        }
+        Assert.assertTrue(results.isResultsScreen(),
+                "Must be on search results before selecting an installment plan");
+        Assert.assertTrue(results.waitForPayInInstallmentVisible(15),
+                "Pay in Installment must be visible before selecting an installment plan");
     }
 
     protected LocalDate resolveDepartureDate() {
@@ -301,8 +328,8 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
         } else {
             ExtentReportManager.logInfo("No separate fare sheet — continuing Full Payment itinerary");
         }
-        confirmPastFareToSummary();
-        ExtentReportManager.logInfo(filterLabel + " + Full Payment completed");
+        completeThroughMyTravellersAndStop();
+        ExtentReportManager.logInfo(filterLabel + " + Full Payment ended at My Travellers Continue");
     }
 
     /**
@@ -332,17 +359,27 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
     }
 
     protected void selectInstallmentPlanPath(String filterLabel, String planLabel) {
+        ensureResultsReadyForInstallment();
         SearchResultsPage results = new SearchResultsPage();
-        if (!results.isResultsScreen()) {
-            navigateBackToResults();
-        }
         results.scrollResultsToTop();
         if (filterLabel.toLowerCase().contains("fast")) {
             results.applyFastestFilter();
         } else {
             results.applyCheapestFilter();
         }
-        Assert.assertTrue(results.isPayInInstallmentVisible(),
+        if (!results.waitForPayInInstallmentVisible(12)) {
+            ExtentReportManager.logInfo("Installment CTA missing after " + filterLabel
+                    + " — recovering to results and retrying once");
+            ensureResultsReadyForInstallment();
+            results = new SearchResultsPage();
+            results.scrollResultsToTop();
+            if (filterLabel.toLowerCase().contains("fast")) {
+                results.applyFastestFilter();
+            } else {
+                results.applyCheapestFilter();
+            }
+        }
+        Assert.assertTrue(results.waitForPayInInstallmentVisible(15),
                 "Pay in Installment must remain visible for Installments scenario");
 
         results.selectPayInInstallmentAtIndex(0);
@@ -355,8 +392,60 @@ abstract class AbstractReturnFlightSearchTest extends JourneyBaseTest {
                 "Installment plans must show before selecting: " + planLabel);
         plansPage.selectPlan(planLabel);
         ensureTravelHouseForeground();
+        plansPage.acceptTermsAndContinue(5);
+        ensureTravelHouseForeground();
+        completeThroughMyTravellersAndStop();
+        ExtentReportManager.logInfo(filterLabel + " + Installment plan [" + planLabel
+                + "] ended at My Travellers Continue (no Price Details)");
+    }
+
+    /**
+     * From itinerary / proceed CTAs → My Travellers: fill required details, tap Continue once, stop.
+     * Does not automate or assert on the Price Details screen.
+     */
+    protected void completeThroughMyTravellersAndStop() {
         confirmPastFareToSummary();
-        ExtentReportManager.logInfo(filterLabel + " + Installment plan [" + planLabel + "] completed");
+        PriceSummaryPage summary = new PriceSummaryPage();
+        long deadline = System.currentTimeMillis() + 45_000L;
+        while (System.currentTimeMillis() < deadline) {
+            PermissionDialog.dismissAll(1);
+            if (UiHelper.waitForDescContains("Who's Going", 2)
+                    || UiHelper.waitForDescContains("My Travellers", 2)
+                    || UiHelper.waitForDescContains("Contact Information", 1)) {
+                break;
+            }
+            if (summary.hasProceedCta() || summary.hasProceedWithPayment()) {
+                summary.proceedPastSummary();
+                pause(2500);
+                continue;
+            }
+            if (summary.isDisplayed() || summary.hasTotalPrice()
+                    || UiHelper.waitForDescContains("I accept", 1)
+                    || UiHelper.waitForDescContains("Total Price", 1)) {
+                summary.acceptTermsAndConditions();
+                pause(400);
+                summary.continueIfPresent();
+                pause(2500);
+                continue;
+            }
+            pause(800);
+        }
+
+        TravellerInfoPage traveller = new TravellerInfoPage();
+        traveller.waitUntilVisible();
+        Assert.assertTrue(traveller.isMyTravellersScreen() || traveller.isDisplayed(),
+                "Should reach My Travellers / Traveller Information");
+        ExtentReportManager.logInfo("On My Travellers — completing required details");
+        traveller.completeOnceSelectNameAndFill();
+        traveller.continueOnceAndEnd();
+
+        // Continue may leave Traveller; never drive Price Details automation
+        if (new PriceDetailsPage().isDisplayed()) {
+            ExtentReportManager.logInfo(
+                    "Stopped after My Travellers Continue (Price Details visible but not automated)");
+        } else {
+            ExtentReportManager.logInfo("Stopped after My Travellers Continue");
+        }
     }
 
     private void ensureOrigin(HomePage home, String origin) {
