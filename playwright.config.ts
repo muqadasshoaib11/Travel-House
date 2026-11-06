@@ -10,17 +10,17 @@ export default defineConfig({
   expect: {
     timeout: 20_000,
   },
-  reporter: [['html', { open: 'never' }], ['list']],
+  reporter: [['html', { open: 'never' }], ['list'], ['junit', { outputFile: 'test-results/junit-results.xml' }]],
   use: {
     baseURL: 'https://assets-dev.travelhouseuk.co.uk',
-    headless: false,
-    viewport: null,
+    headless: !!process.env.CI,
+    viewport: process.env.CI ? { width: 1920, height: 1080 } : null,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     actionTimeout: 20_000,
     navigationTimeout: 30_000,
     launchOptions: {
-      slowMo: 250,
+      slowMo: process.env.CI ? 0 : 250,
       args: ['--start-maximized'],
     },
   },

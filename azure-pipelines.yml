@@ -1,0 +1,43 @@
+trigger:
+  branches:
+    include:
+      - main
+      - master
+      - feature/push-notifications-playwright
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  CI: 'true'
+
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '20.x'
+    displayName: 'Install Node.js 20.x'
+
+  - script: npm ci
+    displayName: 'Install npm dependencies'
+
+  - script: npx playwright install --with-deps chromium
+    displayName: 'Install Playwright Chromium browser'
+
+  - script: npx playwright test
+    displayName: 'Run Playwright Push Notification Tests'
+
+  - task: PublishTestResults@2
+    condition: succeededOrFailed()
+    inputs:
+      testResultsFormat: 'JUnit'
+      testResultsFiles: 'test-results/junit-results.xml'
+      testRunTitle: 'Playwright Push Notifications Suite'
+    displayName: 'Publish JUnit Test Results to ADO'
+
+  - task: PublishPipelineArtifact@1
+    condition: succeededOrFailed()
+    inputs:
+      targetPath: 'playwright-report'
+      artifact: 'playwright-html-report'
+      publishLocation: 'pipeline'
+    displayName: 'Publish Playwright HTML Report Artifact'

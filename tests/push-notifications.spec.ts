@@ -8,6 +8,7 @@ const BANNER_IMAGE_PATH = path.resolve(__dirname, '../assets/banner.png');
  * Non-blocking helper to bring the Chromium window to front if launched from a background runner.
  */
 function bringChromiumToFrontAsync() {
+  if (process.platform !== 'win32' || process.env.CI) return;
   try {
     const psScript = `
 Add-Type -TypeDefinition @'
