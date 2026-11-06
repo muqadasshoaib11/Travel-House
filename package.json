@@ -1,0 +1,13 @@
+{
+  "name": "travelhouse-push-notifications-playwright",
+  "version": "1.0.0",
+  "description": "Playwright automation project for TravelHouse UK Push Notifications",
+  "scripts": {
+    "test": "npx playwright test",
+    "test:headed": "npx playwright test --headed",
+    "test:ui": "npx playwright test --ui"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.51.0"
+  }
+}
